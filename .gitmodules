@@ -28,3 +28,6 @@
 [submodule "lib/yieldspace-tv"]
 	path = lib/yieldspace-tv
 	url = https://github.com/yieldprotocol/yieldspace-tv
+[submodule "lib/openzeppelin-contracts"]
+	path = lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
