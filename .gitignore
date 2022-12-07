@@ -1,4 +1,10 @@
+node_modules/
+
+#artefacts
 out/
 cache/
-fixTests.sh
-node_modules/
+
+#coverage
+lcov.info
+report/.env
+report

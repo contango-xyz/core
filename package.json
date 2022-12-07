@@ -11,11 +11,11 @@
     "clean": "forge clean",
     "build": "forge build",
     "size": "forge build --sizes",
-    "test": "forge test --match-path 'test/**'",
-    "gas": "forge snapshot -v --match-path 'test/**'",
-    "gas:check": "forge snapshot -v --check --match-path 'test/**'",
-    "gas:diff": "forge snapshot -v --diff --match-path 'test/**'",
-    "coverage": "forge coverage --match-path 'test/**' --report lcov && genhtml lcov.info -o report --branch-coverage --legend --dark-mode && open report/index.html"
+    "test": "forge test",
+    "gas": "forge snapshot -v",
+    "gas:check": "forge snapshot -v --check",
+    "gas:diff": "forge snapshot -v --diff",
+    "coverage": "forge coverage --report lcov && genhtml lcov.info -o report --branch-coverage --legend --dark-mode && open report/index.html"
   },
   "devDependencies": {
     "solhint": "^3.3.6"
