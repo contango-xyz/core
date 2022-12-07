@@ -1,0 +1,23 @@
+{
+  "name": "@contango/sol",
+  "version": "1.0.0",
+  "scripts": {
+    "format": "forge fmt",
+    "format:check": "forge fmt --check",
+    "solhint": "solhint --config ./.solhint.json 'src/**/*.sol' --fix",
+    "solhint:check": "solhint --config ./.solhint.json 'src/**/*.sol'",
+    "lint": "npm run format && npm run solhint",
+    "lint:check": "npm run format:check && npm run solhint:check",
+    "clean": "forge clean",
+    "build": "forge build",
+    "size": "forge build --sizes",
+    "test": "forge test --match-path 'test/**'",
+    "gas": "forge snapshot -v --match-path 'test/**'",
+    "gas:check": "forge snapshot -v --check --match-path 'test/**'",
+    "gas:diff": "forge snapshot -v --diff --match-path 'test/**'",
+    "coverage": "forge coverage --match-path 'test/**' --report lcov && genhtml lcov.info -o report --branch-coverage --legend --dark-mode && open report/index.html"
+  },
+  "devDependencies": {
+    "solhint": "^3.3.6"
+  }
+}

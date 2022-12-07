@@ -1,6 +1,44 @@
-[profile.dev]
-src = 'src'
-out = 'out'
+[profile.default]
+block_base_fee_per_gas = 0
+block_coinbase = '0x0000000000000000000000000000000000000000'
+block_difficulty = 0
+block_number = 0
+block_timestamp = 0
+cache = true
+evm_version = 'london'
+ffi = false
+force = false
+fs_permissions = [{access = "read", path = "out"}]
+fuzz_runs = 256
+gas_limit = 9223372036854775807
+gas_price = 0
+gas_reports = ['*']
+ignored_error_codes = []
+initial_balance = '0xffffffffffffffffffffffff'
 libs = ['lib']
+offline = false
+optimizer = true
+optimizer_runs = 200
+out = 'out'
+sender = '0x00a329c0648769a73afac7f9381e08fb43dbea72'
+solc_version = '0.8.17'
+src = 'src'
+test = 'test'
+tx_origin = '0x00a329c0648769a73afac7f9381e08fb43dbea72'
+verbosity = 2
 
-# See more config options https://github.com/foundry-rs/foundry/tree/master/config
+[profile.deep]
+fuzz_runs = 2000
+
+[profile.dev]
+ignored_error_codes = [5574] # code size warning
+optimizer = false
+
+[rpc_endpoints]
+arbitrum = "${ARBITRUM_URL}"
+localhost = "http://127.0.0.1:8545"
+mainnet = "${MAINNET_URL}"
+
+[etherscan]
+arbitrum = {key = "${ETHERSCAN_ARBITRUM_KEY}"}
+mainnet = {key = "${ETHERSCAN_MAINNET_KEY}"}
