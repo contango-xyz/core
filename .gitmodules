@@ -7,3 +7,6 @@
 [submodule "lib/dss-interfaces"]
 	path = lib/dss-interfaces
 	url = https://github.com/makerdao/dss-interfaces
+[submodule "lib/ERC3156"]
+	path = lib/ERC3156
+	url = https://github.com/alcueca/ERC3156
