@@ -1,9 +1,15 @@
 name: test
 
-on: workflow_dispatch
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
 
 env:
-  FOUNDRY_PROFILE: ci
+  ARBITRUM_URL: ${{ secrets.ARBITRUM_URL }}
+  MAINNET_URL: ${{ secrets.MAINNET_URL }}
+  FOUNDRY_PROFILE: deep
 
 jobs:
   check:
@@ -21,6 +27,14 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: nightly
+
+      - name: Cache fork requests
+        uses: actions/cache@v3
+        with:
+          path: ~/.foundry/cache
+          key: ${{ runner.os }}-foundry-network-fork-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-foundry-network-fork-    
 
       - name: Run Forge build
         run: |
