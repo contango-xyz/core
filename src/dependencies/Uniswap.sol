@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity 0.8.17;
 
-pragma abicoder v2;
-
 /// @dev strip down version of https://github.com/Uniswap/v3-core/blob/864efb5bb57bd8bde4689cfd8f7fd7ddeb100524/contracts/libraries/TickMath.sol
 /// the published version doesn't compile on solidity 0.8.x
 library TickMath {

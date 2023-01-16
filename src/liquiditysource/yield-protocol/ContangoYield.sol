@@ -1,29 +1,16 @@
 //SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.17;
 
-import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {IUniswapV3SwapCallback} from "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3SwapCallback.sol";
-
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "solmate/src/tokens/WETH.sol";
 import {IContangoLadle} from "@yield-protocol/vault-v2/contracts/other/contango/interfaces/IContangoLadle.sol";
-import {IContangoWitchListener} from
-    "@yield-protocol/vault-v2/contracts/other/contango/interfaces/IContangoWitchListener.sol";
-import {Yield} from "./Yield.sol";
-import {YieldUtils} from "./YieldUtils.sol";
+import "@yield-protocol/vault-v2/contracts/other/contango/interfaces/IContangoWitchListener.sol";
+import "./Yield.sol";
+import "./YieldUtils.sol";
+import "../ContangoBase.sol";
 
-import {ContangoPositionNFT} from "../../ContangoPositionNFT.sol";
-import {IWETH9, WethHandler} from "../../batchable/WethHandler.sol";
-import {IContango} from "../../interfaces/IContango.sol";
-import {IFeeModel} from "../../interfaces/IFeeModel.sol";
-import {Instrument, PositionId, Symbol, YieldInstrument} from "../../libraries/DataTypes.sol";
-import {YieldStorageLib} from "../../libraries/StorageLib.sol";
-
-import {ContangoBase} from "../ContangoBase.sol";
-
-/// @title ContangoYield
 /// @notice Contract that acts as the main entry point to the protocol with yield-protocol as the underlying
-/// @author Bruno Bonanno
-/// @dev This is the main entry point to the system when using yield-protocol as the underlying,
-/// any UI/contract should be just interacting with this contract children's + the NFT for ownership management
+/// @dev This is the main entry point to the system when using yield-protocol as the underlying
 contract ContangoYield is ContangoBase, IContangoWitchListener {
     using SafeCast for uint256;
     using YieldUtils for Symbol;
@@ -31,7 +18,7 @@ contract ContangoYield is ContangoBase, IContangoWitchListener {
     bytes32 public constant WITCH = keccak256("WITCH");
 
     // solhint-disable-next-line no-empty-blocks
-    constructor(IWETH9 _weth) ContangoBase(_weth) {}
+    constructor(WETH _weth) ContangoBase(_weth) {}
 
     function initialize(ContangoPositionNFT _positionNFT, address _treasury, IContangoLadle _ladle)
         public
@@ -53,7 +40,8 @@ contract ContangoYield is ContangoBase, IContangoWitchListener {
         uint256 limitCost,
         uint256 collateral,
         address payer,
-        uint256 lendingLiquidity
+        uint256 lendingLiquidity,
+        uint24 uniswapFee
     )
         external
         payable
@@ -63,7 +51,8 @@ contract ContangoYield is ContangoBase, IContangoWitchListener {
         whenNotClosingOnly(quantity.toInt256())
         returns (PositionId)
     {
-        return Yield.createPosition(symbol, trader, quantity, limitCost, collateral, payer, lendingLiquidity);
+        return
+            Yield.createPosition(symbol, trader, quantity, limitCost, collateral, payer, lendingLiquidity, uniswapFee);
     }
 
     /// @inheritdoc IContango
@@ -84,9 +73,10 @@ contract ContangoYield is ContangoBase, IContangoWitchListener {
         uint256 limitCost,
         int256 collateral,
         address payerOrReceiver,
-        uint256 lendingLiquidity
+        uint256 lendingLiquidity,
+        uint24 uniswapFee
     ) external payable override nonReentrant whenNotPaused whenNotClosingOnly(quantity) {
-        Yield.modifyPosition(positionId, quantity, limitCost, collateral, payerOrReceiver, lendingLiquidity);
+        Yield.modifyPosition(positionId, quantity, limitCost, collateral, payerOrReceiver, lendingLiquidity, uniswapFee);
     }
 
     /// @inheritdoc IContango
@@ -99,6 +89,8 @@ contract ContangoYield is ContangoBase, IContangoWitchListener {
     {
         Yield.deliver(positionId, payer, to);
     }
+
+    // ============================================== Callback functions ==============================================
 
     // solhint-disable-next-line no-empty-blocks
     function auctionStarted(bytes12 vaultId) external override {}
@@ -115,23 +107,19 @@ contract ContangoYield is ContangoBase, IContangoWitchListener {
     // solhint-disable-next-line no-empty-blocks
     function auctionEnded(bytes12 vaultId, address owner) external override {}
 
-    // ============================================== Callback functions ==============================================
-
     /// @inheritdoc IUniswapV3SwapCallback
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external override {
         Yield.uniswapV3SwapCallback(amount0Delta, amount1Delta, data);
     }
 
-    // ============================================== Admin functions ==============================================
+    // ============================================== Yield specific functions ==============================================
 
-    function createYieldInstrument(
-        Symbol _symbol,
-        bytes6 _baseId,
-        bytes6 _quoteId,
-        uint24 _uniswapFee,
-        IFeeModel _feeModel
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (Instrument memory, YieldInstrument memory) {
-        return YieldStorageLib.createInstrument(_symbol, _baseId, _quoteId, _uniswapFee, _feeModel);
+    function createYieldInstrument(Symbol _symbol, bytes6 _baseId, bytes6 _quoteId, IFeeModel _feeModel)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        returns (Instrument memory, YieldInstrument memory)
+    {
+        return YieldStorageLib.createInstrument(_symbol, _baseId, _quoteId, _feeModel);
     }
 
     function yieldInstrument(Symbol symbol) external view returns (Instrument memory, YieldInstrument memory) {

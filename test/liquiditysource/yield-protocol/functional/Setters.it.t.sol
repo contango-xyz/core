@@ -1,22 +1,22 @@
 //SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.17;
 
-import "./WithYieldFixtures.sol";
-
-import "@openzeppelin/contracts/utils/math/SignedMath.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 import "@yield-protocol/utils-v2/contracts/utils/RevertMsgExtractor.sol";
 import "src/libraries/DataTypes.sol";
 
-contract YieldValidationsTest is
+import "../../fixtures/functional/SettersFixtures.sol";
+import "./WithYieldFixtures.sol";
+
+contract YieldSettersTest is
+    SettersFixtures,
     WithYieldFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212)
 {
-    using SignedMath for int256;
-    using SafeCast for int256;
-
-    event ClosingOnlySet(bool closingOnly);
-    event FeeModelUpdated(Symbol indexed symbol, IFeeModel feeModel);
     event YieldInstrumentCreated(Instrument instrument, YieldInstrument yieldInstrument);
+
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
+    }
 
     function testCreateInstrument() public {
         // given
@@ -30,9 +30,10 @@ contract YieldValidationsTest is
         emit YieldInstrumentCreated(
             Instrument({
                 maturity: uint32(constants.MATURITY_2212),
-                uniswapFee: constants.FEE_0_3,
-                base: WETH,
-                quote: DAI
+                uniswapFeeTransient: 0,
+                base: WETH9,
+                quote: DAI,
+                closingOnly: false
             }),
             YieldInstrument({
                 baseFyToken: IFYToken(expectedBaseFyToken),
@@ -48,11 +49,9 @@ contract YieldValidationsTest is
         // when
         vm.prank(contangoTimelock);
         (Instrument memory newInstrument, YieldInstrument memory newYieldInstrument) = contangoYield
-            .createYieldInstrument(
-            Symbol.wrap("yETHDAI2212_2"), constants.FYETH2212, constants.FYDAI2212, constants.FEE_0_3, feeModel
-        );
+            .createYieldInstrument(Symbol.wrap("yETHDAI2212_2"), constants.FYETH2212, constants.FYDAI2212, feeModel);
 
-        assertEq(address(newInstrument.base), address(WETH), "base");
+        assertEq(address(newInstrument.base), address(WETH9), "base");
         assertEq(address(newYieldInstrument.baseFyToken), expectedBaseFyToken, "baseFyToken");
         assertEq(newYieldInstrument.baseId, constants.FYETH2212, "baseId");
         assertEq(address(newYieldInstrument.basePool), expectedBasePool, "basePool");
@@ -63,28 +62,7 @@ contract YieldValidationsTest is
         assertEq(address(newYieldInstrument.quotePool), expectedQuotePool, "quotePool");
 
         assertEq(newInstrument.maturity, uint32(constants.MATURITY_2212), "maturity");
-        assertEq(newInstrument.uniswapFee, constants.FEE_0_3, "uniswapFee");
+        assertEq(newInstrument.uniswapFeeTransient, 0, "uniswapFee");
         assertEqDecimal(newYieldInstrument.minQuoteDebt, 40e18, 18, "minQuoteDebt");
-    }
-
-    function testPauseUnpause() public {
-        vm.prank(contangoTimelock);
-        contango.pause();
-        assertTrue(contango.paused());
-
-        vm.prank(contangoTimelock);
-        contango.unpause();
-        assertFalse(contango.paused());
-    }
-
-    function testSetFeeModelPermissions() public {
-        IFeeModel newFeeModel = IFeeModel(address(0xfee));
-
-        vm.expectEmit(true, false, false, false);
-        emit FeeModelUpdated(symbol, newFeeModel);
-        vm.prank(contangoTimelock);
-        contango.setFeeModel(symbol, newFeeModel);
-
-        assertEq(address(contango.feeModel(symbol)), address(newFeeModel));
     }
 }

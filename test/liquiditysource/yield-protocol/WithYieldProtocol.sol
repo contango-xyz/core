@@ -12,8 +12,8 @@ import {IOracle} from "@yield-protocol/vault-v2/contracts/interfaces/IOracle.sol
 import {IWitch} from "@yield-protocol/vault-v2/contracts/interfaces/IWitch.sol";
 import {IContangoLadle} from "@yield-protocol/vault-v2/contracts/other/contango/interfaces/IContangoLadle.sol";
 
-import {ContangoYield} from "src/liquiditysource/yield-protocol/ContangoYield.sol";
-import {ContangoYieldQuoter} from "src/liquiditysource/yield-protocol/ContangoYieldQuoter.sol";
+import "src/liquiditysource/yield-protocol/ContangoYield.sol";
+import "src/liquiditysource/yield-protocol/ContangoYieldQuoter.sol";
 import "./constants.sol";
 import "../../ContangoTest.sol";
 
@@ -32,8 +32,10 @@ abstract contract WithYieldProtocol is ContangoTest {
 
     bytes6 internal baseSeriesId;
     bytes6 internal quoteSeriesId;
+    Symbol private symbol;
 
-    constructor(bytes6 _baseSeriesId, bytes6 _quoteSeriesId) {
+    constructor(Symbol _symbol, bytes6 _baseSeriesId, bytes6 _quoteSeriesId) {
+        symbol = _symbol;
         baseSeriesId = _baseSeriesId;
         quoteSeriesId = _quoteSeriesId;
     }
@@ -47,8 +49,6 @@ abstract contract WithYieldProtocol is ContangoTest {
         vm.label(address(cauldron), "Cauldron");
         vm.label(address(witch), "Witch");
         vm.label(yieldTimelock, "YieldTimelock");
-        vm.label(address(0x9D34dF69958675450ab8E53c8Df5531203398Dc9), "YieldMath");
-        vm.label(address(0x30e042468e333Fde8E52Dd237673D7412045D2AC), "ChainlinkUSDMultiOracle");
         vm.label(address(ladle.pools(baseSeriesId)), "BasePool");
         vm.label(address(ladle.pools(quoteSeriesId)), "QuotePool");
         vm.label(address(cauldron.series(baseSeriesId).fyToken), "BaseFYToken");
@@ -57,7 +57,7 @@ abstract contract WithYieldProtocol is ContangoTest {
         contangoYield = ContangoYield(payable(address(contango)));
         contangoQuoter = new ContangoYieldQuoter(positionNFT, contangoYield, cauldron, quoter);
 
-        ContangoYield impl = new ContangoYield(WETH);
+        ContangoYield impl = new ContangoYield(WETH9);
         vm.prank(contangoTimelock);
         contango.upgradeTo(address(impl));
 

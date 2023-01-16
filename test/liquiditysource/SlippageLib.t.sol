@@ -2,9 +2,8 @@
 pragma solidity 0.8.17;
 
 import "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
 
-import {SlippageLib} from "src/liquiditysource/SlippageLib.sol";
+import "src/liquiditysource/SlippageLib.sol";
 
 contract SlippageLibTest is Test {
     function testRequireCostAboveTolerance(uint256 cost, uint256 slippageTolerance) public {

@@ -1,11 +1,10 @@
 //SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.17;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/draft-IERC20Permit.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "dss-interfaces/src/dss/DaiAbstract.sol";
-import {ConfigStorageLib} from "../libraries/StorageLib.sol";
+import "../libraries/StorageLib.sol";
 
 abstract contract PermitForwarder {
     using SafeERC20 for IERC20Permit;

@@ -1,12 +1,6 @@
 //SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.17;
 
-import "@openzeppelin/contracts/utils/math/Math.sol";
-import "@openzeppelin/contracts/utils/math/SignedMath.sol";
-import "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
-
 import {IPool} from "@yield-protocol/yieldspace-tv/src/interfaces/IPool.sol";
 import {ILadle} from "@yield-protocol/vault-v2/contracts/interfaces/ILadle.sol";
 import {ICauldron} from "@yield-protocol/vault-v2/contracts/interfaces/ICauldron.sol";
@@ -16,14 +10,10 @@ import {IContangoLadle} from "@yield-protocol/vault-v2/contracts/other/contango/
 
 import "../UniswapV3Handler.sol";
 import "./YieldUtils.sol";
-import {ConfigStorageLib, StorageLib, YieldStorageLib} from "../../libraries/StorageLib.sol";
 import "../SlippageLib.sol";
-import "../../libraries/DataTypes.sol";
-import "../../libraries/ErrorLib.sol";
-import "../../libraries/CodecLib.sol";
 import "../../libraries/PositionLib.sol";
-import "../../libraries/TransferLib.sol";
-import {ExecutionProcessorLib} from "../../ExecutionProcessorLib.sol";
+import "../../libraries/ErrorLib.sol";
+import "../../ExecutionProcessorLib.sol";
 
 library Yield {
     using YieldUtils for *;
@@ -33,7 +23,7 @@ library Yield {
     using SafeCast for uint128;
     using CodecLib for uint256;
     using PositionLib for PositionId;
-    using TransferLib for IERC20Metadata;
+    using TransferLib for ERC20;
 
     event ContractTraded(Symbol indexed symbol, address indexed trader, PositionId indexed positionId, Fill fill);
     event CollateralAdded(
@@ -52,7 +42,8 @@ library Yield {
         uint256 limitCost,
         uint256 collateral,
         address payer,
-        uint256 lendingLiquidity
+        uint256 lendingLiquidity,
+        uint24 uniswapFee
     ) external returns (PositionId positionId) {
         if (quantity == 0) {
             revert InvalidQuantity(int256(quantity));
@@ -62,7 +53,7 @@ library Yield {
         positionId.validatePayer(payer, trader);
 
         StorageLib.getPositionInstrument()[positionId] = symbol;
-        Instrument memory instrument = _createPosition(symbol, positionId);
+        Instrument memory instrument = _createPosition(symbol, positionId, uniswapFee);
 
         _open(symbol, positionId, trader, instrument, quantity, limitCost, int256(collateral), payer, lendingLiquidity);
     }
@@ -73,14 +64,15 @@ library Yield {
         uint256 limitCost,
         int256 collateral,
         address payerOrReceiver,
-        uint256 lendingLiquidity
+        uint256 lendingLiquidity,
+        uint24 uniswapFee
     ) external {
         if (quantity == 0) {
             revert InvalidQuantity(quantity);
         }
 
         (uint256 openQuantity, address trader, Symbol symbol, Instrument memory instrument) =
-            positionId.loadActivePosition();
+            positionId.loadActivePosition(uniswapFee);
         if (collateral > 0) {
             positionId.validatePayer(payerOrReceiver, trader);
         }
@@ -131,7 +123,10 @@ library Yield {
         );
     }
 
-    function _createPosition(Symbol symbol, PositionId positionId) private returns (Instrument memory instrument) {
+    function _createPosition(Symbol symbol, PositionId positionId, uint24 uniswapFee)
+        private
+        returns (Instrument memory instrument)
+    {
         YieldInstrument storage yieldInsturment;
         (instrument, yieldInsturment) = symbol.loadInstrument();
 
@@ -144,6 +139,8 @@ library Yield {
         YieldStorageLib.getLadle().deterministicBuild(
             positionId.toVaultId(), yieldInsturment.quoteId, yieldInsturment.baseId
         );
+
+        instrument.uniswapFeeTransient = uniswapFee;
     }
 
     function _deletePosition(PositionId positionId) private {
@@ -162,13 +159,17 @@ library Yield {
         address payerOrReceiver,
         uint256 lendingLiquidity
     ) private {
+        if (instrument.closingOnly) {
+            revert InstrumentClosingOnly(symbol);
+        }
+
         YieldInstrument storage yieldInstrument = YieldStorageLib.getInstruments()[symbol];
         address receiver = lendingLiquidity < quantity ? address(this) : address(yieldInstrument.basePool);
 
         // Use a flash swap to buy enough base to hedge the position, pay directly to the pool where we'll lend it
         _flashBuyHedge(
             instrument,
-            yieldInstrument,
+            yieldInstrument.basePool,
             UniswapV3Handler.CallbackInfo({
                 symbol: symbol,
                 positionId: positionId,
@@ -250,12 +251,8 @@ library Yield {
         SlippageLib.requireCostBelowTolerance(callback.fill.cost, callback.info.limitCost);
 
         if (amountToBorrow != 0) {
-            // Sell the fyTokens for actual cash
-            yieldInstrument.quotePool.buyBase(
-                sendBorrowedFundsTo,
-                amountToBorrow, // Amount to borrow in present value
-                art // Max amount to pay (redundant, but required by the API)
-            );
+            // Sell the fyTokens for actual cash (borrow)
+            yieldInstrument.quotePool.buyBase({to: sendBorrowedFundsTo, baseOut: amountToBorrow, max: art});
         }
 
         // Pay uniswap if necessary
@@ -292,7 +289,7 @@ library Yield {
         // Execute a flash swap to undo the hedge
         _flashSellHedge(
             instrument,
-            YieldStorageLib.getInstruments()[symbol],
+            YieldStorageLib.getInstruments()[symbol].basePool,
             UniswapV3Handler.CallbackInfo({
                 symbol: symbol,
                 positionId: positionId,
@@ -304,7 +301,7 @@ library Yield {
             }),
             quantity,
             collateral,
-            address(this) // We must receive the funds ourselves cause the TV pools will consume them all otherwise
+            address(this) // We must receive the funds ourselves cause the TV pools have a bug & will consume them all otherwise
         );
     }
 
@@ -322,7 +319,7 @@ library Yield {
         if (balances.art != 0) {
             // Use the quote we just bought to buy/mint fyTokens to reduce the debt and free up the amount we owe for the flash loan
             if (fullyClosing) {
-                // If we're closing, pay all debt
+                // If we're fully closing, pay all debt
                 art = -int128(balances.art);
                 // Buy the exact amount of (fy)Quote we owe (art) using the money from the flash swap (money was sent directly to the quotePool).
                 // Send the tokens to the fyToken contract so they can be burnt
@@ -347,7 +344,7 @@ library Yield {
                 int256 quoteUsedToRepayDebt = callback.fill.collateral + int256(callback.fill.hedgeCost);
 
                 if (quoteUsedToRepayDebt > 0) {
-                    // If the user is depositing, take the necessary tokens from the trader
+                    // If the user is depositing, take the necessary tokens from the payer
                     if (callback.fill.collateral > 0) {
                         callback.instrument.quote.transferOut({
                             payer: callback.info.payerOrReceiver,
@@ -367,11 +364,10 @@ library Yield {
 
                     // Buy fyTokens with the available tokens
                     art = -int128(
-                        _sellBase({
+                        _getFYTokensToBurn({
                             pool: yieldInstrument.quotePool,
                             underlying: callback.instrument.quote,
                             fyToken: yieldInstrument.quoteFyToken,
-                            to: address(yieldInstrument.quoteFyToken),
                             availableBase: uint256(quoteUsedToRepayDebt).toUint128(),
                             lendingLiquidity: callback.info.lendingLiquidity
                         })
@@ -388,12 +384,12 @@ library Yield {
         SlippageLib.requireCostAboveTolerance(callback.fill.cost, callback.info.limitCost);
 
         // Burn debt and withdraw collateral from Yield, send the collateral directly to the basePool so it can be sold
-        YieldStorageLib.getLadle().pour(
-            callback.info.positionId.toVaultId(),
-            address(yieldInstrument.basePool),
-            -int256(callback.fill.size).toInt128(),
-            art
-        );
+        YieldStorageLib.getLadle().pour({
+            vaultId_: callback.info.positionId.toVaultId(),
+            to: address(yieldInstrument.basePool),
+            ink: -int256(callback.fill.size).toInt128(),
+            art: art
+        });
         // Sell collateral (ink) to pay for the flash swap, the amount of ink was pre-calculated to obtain the exact cost of the swap
         yieldInstrument.basePool.sellFYToken(msg.sender, uint128(callback.fill.hedgeSize));
 
@@ -497,7 +493,8 @@ library Yield {
         address payerOrReceiver,
         uint256 lendingLiquidity
     ) external {
-        (, address trader, Symbol symbol, Instrument memory instrument) = positionId.loadActivePosition();
+        // uniswapFee is irrelevant as there'll be no trade on UNI
+        (, address trader, Symbol symbol, Instrument memory instrument) = positionId.loadActivePosition({uniswapFee: 0});
 
         if (collateral > 0) {
             positionId.validatePayer(payerOrReceiver, trader);
@@ -537,11 +534,10 @@ library Yield {
         }
 
         // Sell the collateral and get as much (fy)Quote (art) as possible
-        uint256 art = _sellBase({
+        uint256 art = _getFYTokensToBurn({
             pool: quotePool,
             underlying: instrument.quote,
             fyToken: yieldInstrument.quoteFyToken,
-            to: address(yieldInstrument.quoteFyToken), // Send the (fy)Quote to itself so it can be burnt
             availableBase: collateral.toUint128(),
             lendingLiquidity: lendingLiquidity
         });
@@ -600,16 +596,12 @@ library Yield {
     }
 
     function _onUniswapCallback(UniswapV3Handler.Callback memory callback) internal {
-        if (callback.info.open) {
-            completeOpen(callback);
-        } else {
-            completeClose(callback);
-        }
+        callback.info.open ? completeOpen(callback) : completeClose(callback);
     }
 
     function _flashBuyHedge(
         Instrument memory instrument,
-        YieldInstrument storage yieldInstrument,
+        IPool basePool,
         UniswapV3Handler.CallbackInfo memory callbackInfo,
         uint256 quantity,
         int256 collateral,
@@ -617,20 +609,17 @@ library Yield {
     ) private {
         UniswapV3Handler.Callback memory callback;
 
+        callback.info = callbackInfo;
         callback.fill.size = quantity;
         callback.fill.collateral = collateral;
-        callback.fill.hedgeSize =
-            _buyFYTokenPreview(yieldInstrument.basePool, quantity.toUint128(), callbackInfo.lendingLiquidity);
+        callback.fill.hedgeSize = _buyFYTokenPreview(basePool, quantity.toUint128(), callbackInfo.lendingLiquidity);
 
-        callback.info = callbackInfo;
-
-        UniswapV3Handler.flashSwap(callback, -int256(callback.fill.hedgeSize), instrument, false, to);
+        UniswapV3Handler.flashSwap({callback: callback, instrument: instrument, baseForQuote: false, to: to});
     }
 
-    /// @dev calculates the amount of base ccy to sell based on the traded quantity and executes a flash swap
     function _flashSellHedge(
         Instrument memory instrument,
-        YieldInstrument storage yieldInstrument,
+        IPool basePool,
         UniswapV3Handler.CallbackInfo memory callbackInfo,
         uint256 quantity,
         int256 collateral,
@@ -638,23 +627,20 @@ library Yield {
     ) private {
         UniswapV3Handler.Callback memory callback;
 
+        callback.info = callbackInfo;
         callback.fill.size = quantity;
         callback.fill.collateral = collateral;
-        // Calculate how much base we'll get by selling the trade quantity
-        callback.fill.hedgeSize = yieldInstrument.basePool.sellFYTokenPreview(quantity.toUint128());
+        callback.fill.hedgeSize = basePool.sellFYTokenPreview(quantity.toUint128());
 
-        callback.info = callbackInfo;
-
-        UniswapV3Handler.flashSwap(callback, int256(callback.fill.hedgeSize), instrument, true, to);
+        UniswapV3Handler.flashSwap({callback: callback, instrument: instrument, baseForQuote: true, to: to});
     }
 
     // ============== Private functions ==============
 
-    function _sellBase(
+    function _getFYTokensToBurn(
         IPool pool,
-        IERC20Metadata underlying,
+        ERC20 underlying,
         IFYToken fyToken,
-        address to,
         uint128 availableBase,
         uint256 lendingLiquidity
     ) private returns (uint128 fyTokenOut) {
@@ -663,17 +649,16 @@ library Yield {
             fyTokenOut = pool.sellBasePreviewZero(maxBaseIn);
             if (fyTokenOut > 0) {
                 // Transfer max amount that can be sold
-                underlying.transferOut(address(this), address(pool), maxBaseIn);
+                underlying.transferOut({payer: address(this), to: address(pool), amount: maxBaseIn});
                 // Sell limited amount to the pool
-                fyTokenOut = pool.sellBase(to, fyTokenOut);
+                fyTokenOut = pool.sellBase({to: address(fyToken), min: fyTokenOut});
             } else {
                 maxBaseIn = 0;
             }
 
-            // Amount to mint 1:1
-            fyTokenOut += _forceLend(underlying, fyToken, to, availableBase - maxBaseIn);
+            fyTokenOut += _forceLend(underlying, fyToken, address(fyToken), availableBase - maxBaseIn);
         } else {
-            fyTokenOut = pool.sellBase(to, availableBase);
+            fyTokenOut = pool.sellBase({to: address(fyToken), min: availableBase});
         }
     }
 
@@ -694,7 +679,7 @@ library Yield {
 
     function _buyFYToken(
         IPool pool,
-        IERC20Metadata underlying,
+        ERC20 underlying,
         IFYToken fyToken,
         address to,
         uint128 fyTokenOut,
@@ -705,42 +690,26 @@ library Yield {
             uint128 maxFYTokenOut = uint128(lendingLiquidity);
 
             if (maxFYTokenOut > 0) {
-                // Send required funds to the pool
-                baseIn = uint128(
-                    underlying.transferOut({
-                        payer: address(this),
-                        to: address(pool),
-                        amount: pool.buyFYTokenPreviewFixed(maxFYTokenOut)
-                    })
-                );
-
-                pool.buyFYToken(to, maxFYTokenOut, type(uint128).max);
+                baseIn = _buyFYToken(pool, underlying, to, maxFYTokenOut);
             }
 
-            // Amount to mint 1:1
             baseIn += _forceLend(underlying, fyToken, to, fyTokenOut - maxFYTokenOut);
         } else {
-            if (excessExpected) {
-                // Send required funds to the pool
-                baseIn = uint128(
-                    underlying.transferOut({
-                        payer: address(this),
-                        to: address(pool),
-                        amount: pool.buyFYTokenPreviewFixed(fyTokenOut)
-                    })
-                );
-
-                pool.buyFYToken(to, fyTokenOut, type(uint128).max);
-            } else {
-                baseIn = pool.buyFYToken(to, fyTokenOut, type(uint128).max);
-            }
+            baseIn = excessExpected
+                ? _buyFYToken(pool, underlying, to, fyTokenOut)
+                : pool.buyFYToken(to, fyTokenOut, type(uint128).max);
         }
     }
 
-    function _forceLend(IERC20Metadata underlying, IFYToken fyToken, address to, uint128 toMint)
-        internal
-        returns (uint128)
+    function _buyFYToken(IPool pool, ERC20 underlying, address to, uint128 fyTokenOut)
+        private
+        returns (uint128 baseIn)
     {
+        baseIn = uint128(underlying.transferOut(address(this), address(pool), pool.buyFYTokenPreviewFixed(fyTokenOut)));
+        pool.buyFYToken(to, fyTokenOut, type(uint128).max);
+    }
+
+    function _forceLend(ERC20 underlying, IFYToken fyToken, address to, uint128 toMint) internal returns (uint128) {
         underlying.transferOut(address(this), address(fyToken.join()), toMint);
         fyToken.mintWithUnderlying(to, toMint);
         return toMint;

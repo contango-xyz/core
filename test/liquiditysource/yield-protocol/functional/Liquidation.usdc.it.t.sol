@@ -18,7 +18,14 @@ contract YieldLiquidationUSDCTest is
     function setUp() public override {
         super.setUp();
 
-        stubPriceWETHUSDC(1000e6, 1e6);
+        stubPrice({
+            _base: WETH9,
+            _quote: USDC,
+            baseUsdPrice: 1000e6,
+            quoteUsdPrice: 1e6,
+            spread: 1e6,
+            uniswapFee: uniswapFee
+        });
 
         vm.etch(address(yieldInstrument.basePool), getCode(address(new IPoolStub(yieldInstrument.basePool))));
         vm.etch(address(yieldInstrument.quotePool), getCode(address(new IPoolStub(yieldInstrument.quotePool))));
@@ -28,9 +35,8 @@ contract YieldLiquidationUSDCTest is
 
         symbol = Symbol.wrap("yETHUSDC2212-2");
         vm.prank(contangoTimelock);
-        (instrument, yieldInstrument) = contangoYield.createYieldInstrument(
-            symbol, constants.FYETH2212, constants.FYUSDC2212, constants.FEE_0_05, feeModel
-        );
+        (instrument, yieldInstrument) =
+            contangoYield.createYieldInstrument(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
 
         vm.startPrank(yieldTimelock);
         ICompositeMultiOracle compositeOracle = ICompositeMultiOracle(0x750B3a18115fe090Bc621F9E4B90bd442bcd02F2);
@@ -89,7 +95,7 @@ contract YieldLiquidationUSDCTest is
         (bool success, bytes memory data) = address(contangoQuoter).call(
             abi.encodeWithSelector(
                 contangoQuoter.modifyCostForPosition.selector,
-                ModifyCostParams(positionId, -2 ether, 0, collateralSlippage)
+                ModifyCostParams(positionId, -2 ether, 0, collateralSlippage, uniswapFee)
             )
         );
         assertFalse(success);
@@ -97,7 +103,7 @@ contract YieldLiquidationUSDCTest is
 
         vm.expectRevert(abi.encodeWithSelector(InvalidPosition.selector, positionId));
         vm.prank(trader);
-        contango.modifyPosition(positionId, -2 ether, 0, 0, trader, HIGH_LIQUIDITY);
+        contango.modifyPosition(positionId, -2 ether, 0, 0, trader, HIGH_LIQUIDITY, uniswapFee);
     }
 
     function testPositionHasNothingLeftAndDeliverPosition() public {
@@ -114,24 +120,38 @@ contract YieldLiquidationUSDCTest is
 
     function testPositionUnderAuction() public {
         (PositionId positionId,) = _openPosition(10 ether, 3520e6);
-        stubPriceWETHUSDC(999e6, 1e6);
+        stubPrice({
+            _base: WETH9,
+            _quote: USDC,
+            baseUsdPrice: 999e6,
+            quoteUsdPrice: 1e6,
+            spread: 1e6,
+            uniswapFee: uniswapFee
+        });
         witch.auction(positionId.toVaultId(), liquidator);
 
-        PositionStatus memory result = contangoQuoter.positionStatus(positionId);
+        PositionStatus memory result = contangoQuoter.positionStatus(positionId, uniswapFee);
         assertTrue(result.liquidating);
 
         vm.expectRevert("Only vault owner");
         vm.prank(trader);
-        contango.modifyPosition(positionId, -5 ether, 0, 0, trader, HIGH_LIQUIDITY);
+        contango.modifyPosition(positionId, -5 ether, 0, 0, trader, HIGH_LIQUIDITY, uniswapFee);
     }
 
     function testExpiredPositionUnderAuction() public {
         (PositionId positionId,) = _openPosition(10 ether, 3520e6);
         vm.warp(cauldron.series(constants.FYUSDC2212).maturity);
-        stubPriceWETHUSDC(999e6, 1e6);
+        stubPrice({
+            _base: WETH9,
+            _quote: USDC,
+            baseUsdPrice: 999e6,
+            quoteUsdPrice: 1e6,
+            spread: 1e6,
+            uniswapFee: uniswapFee
+        });
         witch.auction(positionId.toVaultId(), liquidator);
 
-        PositionStatus memory result = contangoQuoter.positionStatus(positionId);
+        PositionStatus memory result = contangoQuoter.positionStatus(positionId, uniswapFee);
         assertTrue(result.liquidating);
 
         dealAndApprove(address(USDC), trader, 1_000_000e6, address(contango));
@@ -146,7 +166,14 @@ contract YieldLiquidationUSDCTest is
         DataTypes.Balances memory balances = cauldron.balances(vaultId);
         Position memory position = contango.position(positionId);
 
-        stubPriceWETHUSDC(999e6, 1e6);
+        stubPrice({
+            _base: WETH9,
+            _quote: USDC,
+            baseUsdPrice: 999e6,
+            quoteUsdPrice: 1e6,
+            spread: 1e6,
+            uniswapFee: uniswapFee
+        });
 
         // When
         witch.auction(vaultId, liquidator);
@@ -175,7 +202,14 @@ contract YieldLiquidationUSDCTest is
             dec: 6
         });
 
-        stubPriceWETHUSDC(999e6, 1e6);
+        stubPrice({
+            _base: WETH9,
+            _quote: USDC,
+            baseUsdPrice: 999e6,
+            quoteUsdPrice: 1e6,
+            spread: 1e6,
+            uniswapFee: uniswapFee
+        });
 
         // When
         witch.auction(vaultId, liquidator);
@@ -204,7 +238,14 @@ contract YieldLiquidationUSDCTest is
             dec: 6
         });
 
-        stubPriceWETHUSDC(999e6, 1e6);
+        stubPrice({
+            _base: WETH9,
+            _quote: USDC,
+            baseUsdPrice: 999e6,
+            quoteUsdPrice: 1e6,
+            spread: 1e6,
+            uniswapFee: uniswapFee
+        });
 
         // When
         witch.auction(vaultId, liquidator);

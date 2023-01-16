@@ -18,11 +18,16 @@ abstract contract WithYieldFixtures is YieldFixtures, WithMainnet {
 
         yieldTimelock = address(0x3b870db67a45611CF4723d44487EAF398fAc51E3);
 
-        blockNo = 16089538 + 1;
-        chain = "https://rpc.tenderly.co/fork/7262b45d-a0be-4426-a43b-ba2ef5f1a881";
+        blockNo = 16175593;
     }
 
-    function setUp() public virtual override (YieldFixtures, WithMainnet) {
+    function setUp() public virtual override(YieldFixtures, WithMainnet) {
         super.setUp();
+
+        // TODO remove when possible
+        vm.startPrank(contangoTimelock);
+        contango.grantRole(contango.EMERGENCY_BREAK(), contangoMultisig);
+        contango.grantRole(contango.OPERATOR(), contangoMultisig);
+        vm.stopPrank();
     }
 }

@@ -1,27 +1,20 @@
 //SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.17;
 
-import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/utils/math/SignedMath.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "./interfaces/IFeeModel.sol";
 import "./libraries/CodecLib.sol";
 import "./libraries/StorageLib.sol";
 import "./libraries/TransferLib.sol";
 
-import {InvalidInstrument} from "./libraries/ErrorLib.sol";
-
-/// @title ExecutionProcessorLib
 /// @dev This set of methods process the result of an execution, update the internal accounting and transfer funds if required
-/// @author Bruno Bonanno
 library ExecutionProcessorLib {
     using SafeCast for uint256;
     using Math for uint256;
     using SignedMath for int256;
-    using SafeERC20 for IERC20;
-    using TransferLib for IERC20;
+    using TransferLib for ERC20;
     using CodecLib for uint256;
 
     event PositionUpserted(
@@ -80,7 +73,7 @@ library ExecutionProcessorLib {
         uint256 deliverableQuantity,
         uint256 deliveryCost,
         address payer,
-        IERC20 quoteToken,
+        ERC20 quoteToken,
         address to
     ) internal {
         delete StorageLib.getPositionNotionals()[positionId];
@@ -116,7 +109,7 @@ library ExecutionProcessorLib {
         uint256 size,
         uint256 cost,
         int256 collateralDelta,
-        IERC20 quoteToken,
+        ERC20 quoteToken,
         address to,
         uint256 minCost
     ) internal {
@@ -154,7 +147,7 @@ library ExecutionProcessorLib {
         uint256 size,
         uint256 cost,
         int256 collateralDelta,
-        IERC20 quoteToken,
+        ERC20 quoteToken,
         address to,
         uint256 minCost
     ) internal {
@@ -187,7 +180,7 @@ library ExecutionProcessorLib {
         PositionId positionId,
         address trader,
         uint256 cost,
-        IERC20 quoteToken,
+        ERC20 quoteToken,
         address to
     ) internal {
         mapping(PositionId => uint256) storage notionals = StorageLib.getPositionNotionals();

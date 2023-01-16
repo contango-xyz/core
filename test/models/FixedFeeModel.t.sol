@@ -6,7 +6,7 @@ import "forge-std/Test.sol";
 import "src/models/FixedFeeModel.sol";
 
 contract FixedFeeModelTest is Test {
-    using MathLib for uint256;
+    using FixedPointMathLib for uint256;
 
     FixedFeeModel private sut;
 

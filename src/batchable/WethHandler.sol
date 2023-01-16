@@ -1,18 +1,18 @@
 //SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.17;
 
-import "@openzeppelin/contracts/utils/Address.sol";
-import "../dependencies/IWETH9.sol";
+import "solmate/src/tokens/WETH.sol";
+import "solmate/src/utils/SafeTransferLib.sol";
 
 abstract contract WethHandler {
-    using Address for address payable;
+    using SafeTransferLib for address payable;
 
     error OnlyFromWETH(address weth, address sender);
     error NothingToWrap();
 
-    IWETH9 public immutable weth;
+    WETH public immutable weth;
 
-    constructor(IWETH9 _weth) {
+    constructor(WETH _weth) {
         weth = _weth;
     }
 
@@ -26,10 +26,10 @@ abstract contract WethHandler {
 
     function unwrapWETH(address payable to) external payable returns (uint256 unwrapped) {
         unwrapped = weth.balanceOf(address(this));
-        // We don't wanna fail on 0 unwrap as some batch calls may add it just in case
+        // We don't wanna act on 0 unwrap as some batch calls may add it just in case
         if (unwrapped != 0) {
             weth.withdraw(unwrapped);
-            to.sendValue(unwrapped);
+            to.safeTransferETH(unwrapped);
         }
     }
 

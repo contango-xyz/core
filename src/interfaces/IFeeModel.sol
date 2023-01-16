@@ -1,10 +1,10 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.17;
 
-import {PositionId} from "../libraries/DataTypes.sol";
+import "../libraries/DataTypes.sol";
 
 interface IFeeModel {
-    /// @notice Calculates fess given a trade cost
+    /// @notice Calculates fees for a given trade
     /// @param trader The trade trader
     /// @param positionId The trade position id
     /// @param cost The trade cost

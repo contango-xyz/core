@@ -9,7 +9,6 @@ contract YieldLowLiquidityETHUSDCTest is
 {
     using SignedMath for int256;
     using SafeCast for int256;
-    using SignedMathLib for int256;
     using YieldUtils for PositionId;
     using TestUtils for *;
 
@@ -20,7 +19,14 @@ contract YieldLowLiquidityETHUSDCTest is
     function setUp() public override {
         super.setUp();
 
-        stubPriceWETHUSDC(700e6, 1e6);
+        stubPrice({
+            _base: WETH9,
+            _quote: USDC,
+            baseUsdPrice: 700e6,
+            quoteUsdPrice: 1e6,
+            spread: 1e6,
+            uniswapFee: uniswapFee
+        });
 
         vm.etch(address(yieldInstrument.basePool), getCode(address(new IPoolStub(yieldInstrument.basePool))));
         vm.etch(address(yieldInstrument.quotePool), getCode(address(new IPoolStub(yieldInstrument.quotePool))));
@@ -43,9 +49,8 @@ contract YieldLowLiquidityETHUSDCTest is
 
         symbol = Symbol.wrap("yETHUSDC2212-2");
         vm.prank(contangoTimelock);
-        (instrument, yieldInstrument) = contangoYield.createYieldInstrument(
-            symbol, constants.FYETH2212, constants.FYUSDC2212, constants.FEE_0_05, feeModel
-        );
+        (instrument, yieldInstrument) =
+            contangoYield.createYieldInstrument(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
 
         vm.startPrank(yieldTimelock);
         ICompositeMultiOracle compositeOracle = ICompositeMultiOracle(0x750B3a18115fe090Bc621F9E4B90bd442bcd02F2);
@@ -67,8 +72,9 @@ contract YieldLowLiquidityETHUSDCTest is
         _setPoolStubLiquidity({pool: yieldInstrument.quotePool, borrowing: 100e6, lending: baseMaxFYTokenOut});
         uint256 quantity = 2 ether;
 
-        ModifyCostResult memory result =
-            contangoQuoter.openingCostForPosition(OpeningCostParams(symbol, quantity, 0, collateralSlippage));
+        ModifyCostResult memory result = contangoQuoter.openingCostForPosition(
+            OpeningCostParams(symbol, quantity, 0, collateralSlippage, uniswapFee)
+        );
 
         assertFalse(result.insufficientLiquidity, "insufficientLiquidity");
         // Flag is false as the req collateral grew to accommodate the low liq
@@ -97,8 +103,9 @@ contract YieldLowLiquidityETHUSDCTest is
         _setPoolStubLiquidity({pool: yieldInstrument.quotePool, borrowing: 89.49e6, lending: quoteMaxFYTokenOut});
         uint256 quantity = 2 ether;
 
-        ModifyCostResult memory result =
-            contangoQuoter.openingCostForPosition(OpeningCostParams(symbol, quantity, 0, collateralSlippage));
+        ModifyCostResult memory result = contangoQuoter.openingCostForPosition(
+            OpeningCostParams(symbol, quantity, 0, collateralSlippage, uniswapFee)
+        );
 
         // The quoter warns that the trade is not possible
         assertTrue(result.insufficientLiquidity, "insufficientLiquidity");
@@ -115,7 +122,8 @@ contract YieldLowLiquidityETHUSDCTest is
             result.cost.slippage(),
             result.collateralUsed.abs(),
             trader,
-            result.baseLendingLiquidity
+            result.baseLendingLiquidity,
+            uniswapFee
         );
     }
 
@@ -126,8 +134,9 @@ contract YieldLowLiquidityETHUSDCTest is
         _setPoolStubLiquidity({pool: yieldInstrument.basePool, borrowing: 100 ether, lending: baseMaxFYTokenOut});
         uint256 quantity = 2 ether;
 
-        ModifyCostResult memory result =
-            contangoQuoter.openingCostForPosition(OpeningCostParams(symbol, quantity, 0, collateralSlippage));
+        ModifyCostResult memory result = contangoQuoter.openingCostForPosition(
+            OpeningCostParams(symbol, quantity, 0, collateralSlippage, uniswapFee)
+        );
 
         assertFalse(result.insufficientLiquidity, "insufficientLiquidity");
         assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut, "baseLendingLiquidity");
@@ -151,8 +160,9 @@ contract YieldLowLiquidityETHUSDCTest is
         _setPoolStubLiquidity({pool: yieldInstrument.basePool, borrowing: 100 ether, lending: baseMaxFYTokenOut});
         uint256 quantity = 2 ether;
 
-        ModifyCostResult memory result =
-            contangoQuoter.openingCostForPosition(OpeningCostParams(symbol, quantity, 0, collateralSlippage));
+        ModifyCostResult memory result = contangoQuoter.openingCostForPosition(
+            OpeningCostParams(symbol, quantity, 0, collateralSlippage, uniswapFee)
+        );
 
         assertFalse(result.insufficientLiquidity, "insufficientLiquidity");
         assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut, "baseLendingLiquidity");
@@ -174,8 +184,9 @@ contract YieldLowLiquidityETHUSDCTest is
         // Given
         uint256 quantity = 200 ether;
 
-        ModifyCostResult memory result =
-            contangoQuoter.openingCostForPosition(OpeningCostParams(symbol, quantity, 0, collateralSlippage));
+        ModifyCostResult memory result = contangoQuoter.openingCostForPosition(
+            OpeningCostParams(symbol, quantity, 0, collateralSlippage, uniswapFee)
+        );
 
         assertFalse(result.insufficientLiquidity, "insufficientLiquidity");
         // Flag is false as the req collateral grew to accommodate the low liq
@@ -196,8 +207,9 @@ contract YieldLowLiquidityETHUSDCTest is
         assertApproxEqAbsDecimal(debt.sum, 10612.983613e6, Yield.BORROWING_BUFFER, quoteDecimals, "total debt");
 
         uint256 quantity = 20 ether;
-        ModifyCostResult memory result =
-            contangoQuoter.openingCostForPosition(OpeningCostParams(symbol, quantity, 0, collateralSlippage));
+        ModifyCostResult memory result = contangoQuoter.openingCostForPosition(
+            OpeningCostParams(symbol, quantity, 0, collateralSlippage, uniswapFee)
+        );
 
         // The quoter warns that the trade is not possible
         assertTrue(result.insufficientLiquidity, "insufficientLiquidity");
@@ -216,7 +228,8 @@ contract YieldLowLiquidityETHUSDCTest is
             result.cost.abs(),
             result.collateralUsed.abs(),
             trader,
-            result.baseLendingLiquidity
+            result.baseLendingLiquidity,
+            uniswapFee
         );
     }
 
@@ -233,7 +246,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: 0,
             collateral: 200e6,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -261,7 +275,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: 0,
             collateral: -100.01e6,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -285,7 +300,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: 2 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -319,7 +335,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: 2 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -353,7 +370,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: 2 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -378,7 +396,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: 2 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -402,7 +421,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: 3 ether,
             collateral: 2500e6,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -427,7 +447,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: 3 ether,
             collateral: 2500e6,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -457,7 +478,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: 3 ether,
             collateral: 2500e6,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -487,7 +509,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: 3 ether,
             collateral: 2500e6,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -515,7 +538,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: 2 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -544,7 +568,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: 2 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -575,7 +600,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: -0.25 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -605,7 +631,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: -0.25 ether, // .25 * .945 = 0.23625
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -635,7 +662,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: -0.25 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -652,7 +680,8 @@ contract YieldLowLiquidityETHUSDCTest is
             result.cost.abs(),
             result.collateralUsed,
             trader,
-            result.quoteLendingLiquidity
+            result.quoteLendingLiquidity,
+            uniswapFee
         );
     }
 
@@ -668,7 +697,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: -0.5 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -702,7 +732,14 @@ contract YieldLowLiquidityETHUSDCTest is
         (PositionId positionId,) = _openPosition({quantity: 2 ether, collateral: 800e6});
         DataTypes.Balances memory balances = cauldron.balances(positionId.toVaultId());
         assertApproxEqAbsDecimal(balances.art, 602.134079e6, Yield.BORROWING_BUFFER, quoteDecimals, "art");
-        stubPriceWETHUSDC(1400e6, 1e6);
+        stubPrice({
+            _base: WETH9,
+            _quote: USDC,
+            baseUsdPrice: 1400e6,
+            quoteUsdPrice: 1e6,
+            spread: 1e6,
+            uniswapFee: uniswapFee
+        });
 
         assertEqDecimal(USDC.balanceOf(trader), 0, quoteDecimals, "trader balance before");
 
@@ -710,7 +747,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: -1 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -760,7 +798,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: -2 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -787,7 +826,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: -2 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -812,7 +852,8 @@ contract YieldLowLiquidityETHUSDCTest is
             positionId: positionId,
             quantity: -2 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
 
@@ -829,7 +870,8 @@ contract YieldLowLiquidityETHUSDCTest is
             result.cost.abs(),
             result.collateralUsed,
             trader,
-            result.quoteLendingLiquidity
+            result.quoteLendingLiquidity,
+            uniswapFee
         );
     }
 }

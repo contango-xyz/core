@@ -1,28 +1,22 @@
-//SPDX-License-Identifier: MIT
+//SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.17;
 
-import {IUniswapV3SwapCallback} from "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3SwapCallback.sol";
+import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3SwapCallback.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
-import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
-import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "../utils/Balanceless.sol";
+import "../ContangoPositionNFT.sol";
+import "../batchable/Batchable.sol";
+import "../batchable/PermitForwarder.sol";
+import "../batchable/WethHandler.sol";
+import "../interfaces/IContango.sol";
+import "../libraries/DataTypes.sol";
+import "../libraries/CodecLib.sol";
+import "../libraries/ErrorLib.sol";
 
-import {Balanceless} from "../utils/Balanceless.sol";
-import {ContangoPositionNFT} from "../ContangoPositionNFT.sol";
-import {Batchable} from "../batchable/Batchable.sol";
-import {PermitForwarder} from "../batchable/PermitForwarder.sol";
-import {IWETH9, WethHandler} from "../batchable/WethHandler.sol";
-import {IContango} from "../interfaces/IContango.sol";
-import {IContangoView} from "../interfaces/IContangoView.sol";
-import {IFeeModel} from "../interfaces/IFeeModel.sol";
-import {Position, PositionId, Symbol} from "../libraries/DataTypes.sol";
-import {CodecLib} from "../libraries/CodecLib.sol";
-import {FunctionNotFound} from "../libraries/ErrorLib.sol";
-import {ConfigStorageLib, StorageLib} from "../libraries/StorageLib.sol";
-import {ClosingOnly} from "../libraries/ErrorLib.sol";
-
-/// @title ContangoBase
 /// @notice Base contract that implements all common interfaces and function for all underlying implementations
 abstract contract ContangoBase is
     IContango,
@@ -38,8 +32,11 @@ abstract contract ContangoBase is
 {
     using CodecLib for uint256;
 
+    bytes32 public constant EMERGENCY_BREAK = keccak256("EMERGENCY_BREAK");
+    bytes32 public constant OPERATOR = keccak256("OPERATOR");
+
     // solhint-disable-next-line no-empty-blocks
-    constructor(IWETH9 _weth) WethHandler(_weth) {}
+    constructor(WETH _weth) WethHandler(_weth) {}
 
     // solhint-disable-next-line func-name-mixedcase
     function __ContangoBase_init(ContangoPositionNFT _positionNFT, address _treasury) public onlyInitializing {
@@ -55,16 +52,24 @@ abstract contract ContangoBase is
 
     // ============================================== Admin functions ==============================================
 
-    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function pause() external onlyRole(EMERGENCY_BREAK) {
         _pause();
     }
 
-    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function unpause() external onlyRole(EMERGENCY_BREAK) {
         _unpause();
     }
 
-    function setClosingOnly(bool _closingOnly) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setClosingOnly(bool _closingOnly) external onlyRole(OPERATOR) {
         ConfigStorageLib.setClosingOnly(_closingOnly);
+    }
+
+    function closingOnly() external view override returns (bool) {
+        return ConfigStorageLib.getClosingOnly();
+    }
+
+    function setClosingOnly(Symbol symbol, bool _closingOnly) external onlyRole(OPERATOR) {
+        StorageLib.setClosingOnly(symbol, _closingOnly);
     }
 
     function setTrustedToken(address token, bool trusted) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -73,10 +78,6 @@ abstract contract ContangoBase is
 
     function setFeeModel(Symbol symbol, IFeeModel _feeModel) external onlyRole(DEFAULT_ADMIN_ROLE) {
         StorageLib.setFeeModel(symbol, _feeModel);
-    }
-
-    function setInstrumentUniswapFee(Symbol symbol, uint24 uniswapFee) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        StorageLib.setInstrumentUniswapFee(symbol, uniswapFee);
     }
 
     function collectBalance(address token, address payable to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -90,8 +91,9 @@ abstract contract ContangoBase is
         _;
     }
 
-    // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+    function _authorizeUpgrade(address) internal view override {
+        _checkRole(DEFAULT_ADMIN_ROLE);
+    }
 
     // ============================================== View functions ==============================================
 
@@ -111,7 +113,6 @@ abstract contract ContangoBase is
         return StorageLib.getInstrumentFeeModel()[symbol];
     }
 
-    /// @notice reverts on fallback for informational purposes
     fallback() external payable {
         revert FunctionNotFound(msg.sig);
     }

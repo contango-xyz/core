@@ -1,9 +1,11 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.17;
 
-import {Symbol, PositionId} from "./DataTypes.sol";
+import "./DataTypes.sol";
 
 error ClosingOnly();
+
+error InstrumentClosingOnly(Symbol symbol);
 
 error FunctionNotFound(bytes4 sig);
 
@@ -28,8 +30,3 @@ error PositionActive(PositionId positionId, uint32 maturity, uint256 timestamp);
 error PositionExpired(PositionId positionId, uint32 maturity, uint256 timestamp);
 
 error ViewOnly();
-
-// TODO these should be removed before going live
-error NotImplemented(string description);
-
-error Unsupported();

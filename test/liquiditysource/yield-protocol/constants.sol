@@ -16,6 +16,9 @@ library constants {
     bytes6 internal constant FYETH2303 = "0009";
     bytes6 internal constant FYDAI2303 = "0109";
     bytes6 internal constant FYUSDC2303 = "0209";
+    bytes6 internal constant FYETH2306 = 0x0030FF00028B;
+    bytes6 internal constant FYDAI2306 = 0x0031FF00028B;
+    bytes6 internal constant FYUSDC2306 = 0x0032FF00028B;
     int128 internal constant ONE64 = 18446744073709551616;
     int128 internal constant SECONDS_IN_ONE_YEAR = 31557600;
     uint24 internal constant FEE_0_05 = 500;
@@ -33,4 +36,11 @@ library constants {
     Symbol internal constant yUSDCETH2303 = Symbol.wrap("yUSDCETH2303");
     Symbol internal constant yETHDAI2303 = Symbol.wrap("yETHDAI2303");
     Symbol internal constant yDAIETH2303 = Symbol.wrap("yDAIETH2303");
+    Symbol internal constant yDAIUSDC2303 = Symbol.wrap("yDAIUSDC2303");
+
+    Symbol internal constant yETHUSDC2306 = Symbol.wrap("yETHUSDC2306");
+    Symbol internal constant yUSDCETH2306 = Symbol.wrap("yUSDCETH2306");
+    Symbol internal constant yETHDAI2306 = Symbol.wrap("yETHDAI2306");
+    Symbol internal constant yDAIETH2306 = Symbol.wrap("yDAIETH2306");
+    Symbol internal constant yDAIUSDC2306 = Symbol.wrap("yDAIUSDC2306");
 }

@@ -1,20 +1,15 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.17;
 
-import {
-    PositionId,
-    OpeningCostParams,
-    PositionStatus,
-    ModifyCostParams,
-    ModifyCostResult
-} from "../libraries/DataTypes.sol";
+import "../libraries/QuoterDataTypes.sol";
 
 /// @title Interface to allow for quoting position operations
 interface IContangoQuoter {
     /// @notice Quotes the position status
     /// @param positionId The id of a position
+    /// @param uniswapFee The fee (pool) to be used for the quote
     /// @return position status
-    function positionStatus(PositionId positionId) external returns (PositionStatus memory);
+    function positionStatus(PositionId positionId, uint24 uniswapFee) external returns (PositionStatus memory);
 
     /// @notice Quotes the cost to open a position with the respective collateral used
     /// @param params opening cost parameters

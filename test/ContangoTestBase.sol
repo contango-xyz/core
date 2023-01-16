@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.17;
 
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "solmate/src/tokens/ERC20.sol";
 
-import {IQuoter} from "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
 
 import "forge-std/Test.sol";
 
-import {IWETH9} from "src/dependencies/IWETH9.sol";
+import "solmate/src/tokens/WETH.sol";
 
 import "src/libraries/DataTypes.sol";
-import {IContangoView} from "src/interfaces/IContangoView.sol";
-import {IContangoQuoter} from "src/interfaces/IContangoQuoter.sol";
-import {ContangoBase} from "src/liquiditysource/ContangoBase.sol";
-import {ContangoPositionNFT} from "src/ContangoPositionNFT.sol";
+import "src/interfaces/IContangoView.sol";
+import "src/interfaces/IContangoQuoter.sol";
+import "src/liquiditysource/ContangoBase.sol";
+import "src/ContangoPositionNFT.sol";
 
-import {ChainlinkAggregatorV2V3Mock} from "./stub/ChainlinkAggregatorV2V3Mock.sol";
+import "./stub/ChainlinkAggregatorV2V3Mock.sol";
 import "./stub/UniswapPoolStub.sol";
-import {Utilities} from "./utils/Utilities.sol";
-import {TestUtils} from "./utils/TestUtils.sol";
+import "./utils/Utilities.sol";
+import "./utils/TestUtils.sol";
 
 // solhint-disable-next-line contract-name-camelcase
 library uniswapAddresses {
@@ -35,10 +35,12 @@ abstract contract ContangoTestBase is Test {
     address payable internal trader = payable(address(0xb0b));
     mapping(address => bool) internal stubbedAddresses;
 
-    IERC20Metadata internal DAI;
-    IERC20Metadata internal USDC;
-    IERC20Metadata internal WBTC;
-    IWETH9 internal WETH;
+    ERC20 internal DAI;
+    ERC20 internal USDC;
+    ERC20 internal WBTC;
+    WETH internal WETH9;
+
+    mapping(ERC20 => address) internal chainlinkUsdOracles;
 
     ContangoPositionNFT internal positionNFT;
     ContangoBase internal contango;
@@ -46,8 +48,8 @@ abstract contract ContangoTestBase is Test {
     IContangoQuoter internal contangoQuoter;
     IFeeModel internal feeModel;
 
-    IERC20Metadata internal base;
-    IERC20Metadata internal quote;
+    ERC20 internal base;
+    ERC20 internal quote;
 
     uint256 internal blockNo;
     string internal chain;
@@ -59,8 +61,12 @@ abstract contract ContangoTestBase is Test {
     address payable internal sink;
     address internal treasury;
     address internal contangoTimelock;
+    address internal contangoMultisig;
 
     uint256 internal collateralSlippage = 0.001e18;
+
+    uint256 internal costBuffer;
+    uint256 internal costBufferMultiplier = 1; // up to how many times buffer could be applied for tests where the positions were modified
 
     function setUp() public virtual {
         vm.label(trader, "Trader Bob");
@@ -84,10 +90,10 @@ abstract contract ContangoTestBase is Test {
     function dealAndApprove(address token, address to, uint256 amount, address approveTo) internal {
         _deal(token, to, amount);
         vm.prank(to);
-        IERC20(token).approve(approveTo, amount);
+        ERC20(token).approve(approveTo, amount);
     }
 
-    function clearBalance(address who, IERC20Metadata token) internal {
+    function clearBalance(address who, ERC20 token) internal {
         uint256 balance = token.balanceOf(who);
         vm.prank(who);
         token.transfer(sink, balance);
@@ -97,57 +103,5 @@ abstract contract ContangoTestBase is Test {
         vm.prank(who);
         (bool success,) = sink.call{value: who.balance}("");
         assertEq(success, true);
-    }
-
-    // TODO remove if/when this gets merged https://github.com/foundry-rs/forge-std/pull/191
-
-    function assertApproxEqAbsDecimal(uint256 a, uint256 b, uint256 maxDelta, uint256 decimals) internal virtual {
-        uint256 delta = stdMath.delta(a, b);
-
-        if (delta > maxDelta) {
-            emit log("Error: a ~= b not satisfied [uint]");
-            emit log_named_decimal_uint("  Expected", b, decimals);
-            emit log_named_decimal_uint("    Actual", a, decimals);
-            emit log_named_decimal_uint(" Max Delta", maxDelta, decimals);
-            emit log_named_decimal_uint("     Delta", delta, decimals);
-            fail();
-        }
-    }
-
-    function assertApproxEqAbsDecimal(uint256 a, uint256 b, uint256 maxDelta, uint256 decimals, string memory err)
-        internal
-        virtual
-    {
-        uint256 delta = stdMath.delta(a, b);
-
-        if (delta > maxDelta) {
-            emit log_named_string("Error", err);
-            assertApproxEqAbsDecimal(a, b, maxDelta, decimals);
-        }
-    }
-
-    function assertApproxEqAbsDecimal(int256 a, int256 b, uint256 maxDelta, uint256 decimals) internal virtual {
-        uint256 delta = stdMath.delta(a, b);
-
-        if (delta > maxDelta) {
-            emit log("Error: a ~= b not satisfied [int]");
-            emit log_named_decimal_int("  Expected", b, decimals);
-            emit log_named_decimal_int("    Actual", a, decimals);
-            emit log_named_decimal_uint(" Max Delta", maxDelta, decimals);
-            emit log_named_decimal_uint("     Delta", delta, decimals);
-            fail();
-        }
-    }
-
-    function assertApproxEqAbsDecimal(int256 a, int256 b, uint256 maxDelta, uint256 decimals, string memory err)
-        internal
-        virtual
-    {
-        uint256 delta = stdMath.delta(a, b);
-
-        if (delta > maxDelta) {
-            emit log_named_string("Error", err);
-            assertApproxEqAbsDecimal(a, b, maxDelta, decimals);
-        }
     }
 }

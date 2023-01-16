@@ -2,10 +2,7 @@
 pragma solidity 0.8.17;
 
 import "./WithYieldFixtures.sol";
-
-import "src/libraries/DataTypes.sol";
 import "src/dependencies/Uniswap.sol";
-import {ModifyCostResult} from "src/libraries/DataTypes.sol";
 
 contract YieldArbitrumPnLUSDCTest is
     WithYieldFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212)
@@ -16,7 +13,7 @@ contract YieldArbitrumPnLUSDCTest is
 
     function setUp() public override {
         super.setUp();
-        stubPriceWETHUSDC(1000e6);
+        stubPrice({_base: WETH9, _quote: USDC, baseUsdPrice: 1000e6, quoteUsdPrice: 1e6, uniswapFee: uniswapFee});
     }
 
     function testOpenAndCloseProfitableLongUSDC() public {
@@ -26,7 +23,7 @@ contract YieldArbitrumPnLUSDCTest is
         skip(4.5 days);
         _update(yieldInstrument.basePool);
         skip(0.5 days);
-        stubPriceWETHUSDC(1500e6);
+        stubPrice({_base: WETH9, _quote: USDC, baseUsdPrice: 1500e6, quoteUsdPrice: 1e6, uniswapFee: uniswapFee});
 
         // Close position
         _closePosition(positionId);
@@ -39,7 +36,7 @@ contract YieldArbitrumPnLUSDCTest is
         skip(4.5 days);
         _update(yieldInstrument.basePool);
         skip(0.5 days);
-        stubPriceWETHUSDC(960e6);
+        stubPrice({_base: WETH9, _quote: USDC, baseUsdPrice: 960e6, quoteUsdPrice: 1e6, uniswapFee: uniswapFee});
 
         // Close position
         _closePosition(positionId);

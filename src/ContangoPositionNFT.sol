@@ -4,7 +4,7 @@ pragma solidity 0.8.17;
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import {PositionId} from "./libraries/DataTypes.sol";
+import "./libraries/DataTypes.sol";
 
 /// @title ContangoPositionNFT
 /// @notice An ERC721 NFT that represents ownership of each position created through the protocol
@@ -53,17 +53,11 @@ contract ContangoPositionNFT is ERC721URIStorage, AccessControl {
      * https://eips.ethereum.org/EIPS/eip-165.
      *
      */
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        virtual
-        override (ERC721, AccessControl)
-        returns (bool)
-    {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721, AccessControl) returns (bool) {
         return AccessControl.supportsInterface(interfaceId) || ERC721.supportsInterface(interfaceId);
     }
 
-    /// @dev returns all the positions a trader has between the provided boundaries
+    /// @dev To be deprecated by a subgraph. returns all the positions a trader has between the provided boundaries
     /// @param owner Trader that owns the positions
     /// @param from Starting position to consider for the search (inclusive)
     /// @param to Ending position to consider for the search (exclusive)

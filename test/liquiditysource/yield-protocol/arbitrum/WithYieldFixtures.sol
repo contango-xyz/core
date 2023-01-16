@@ -21,7 +21,16 @@ abstract contract WithYieldFixtures is YieldFixtures, WithArbitrum {
         blockNo = 36650929;
     }
 
-    function setUp() public virtual override (YieldFixtures, WithArbitrum) {
+    function setUp() public virtual override(YieldFixtures, WithArbitrum) {
         super.setUp();
+
+        vm.label(address(0x9D34dF69958675450ab8E53c8Df5531203398Dc9), "YieldMath");
+        vm.label(address(0x30e042468e333Fde8E52Dd237673D7412045D2AC), "ChainlinkUSDMultiOracle");
+
+        // TODO remove when possible
+        vm.startPrank(contangoTimelock);
+        contango.grantRole(contango.EMERGENCY_BREAK(), contangoMultisig);
+        contango.grantRole(contango.OPERATOR(), contangoMultisig);
+        vm.stopPrank();
     }
 }

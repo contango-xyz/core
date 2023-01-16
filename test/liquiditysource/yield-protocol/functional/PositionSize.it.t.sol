@@ -15,7 +15,14 @@ contract YieldPositionSizeTest is
     function setUp() public override {
         super.setUp();
 
-        stubPriceWETHUSDC(1400e6, 1e6);
+        stubPrice({
+            _base: WETH9,
+            _quote: USDC,
+            baseUsdPrice: 1400e6,
+            quoteUsdPrice: 1e6,
+            spread: 1e6,
+            uniswapFee: uniswapFee
+        });
 
         vm.etch(address(yieldInstrument.basePool), getCode(address(new IPoolStub(yieldInstrument.basePool))));
         vm.etch(address(yieldInstrument.quotePool), getCode(address(new IPoolStub(yieldInstrument.quotePool))));
@@ -25,9 +32,8 @@ contract YieldPositionSizeTest is
 
         symbol = Symbol.wrap("yETHUSDC2212-2");
         vm.prank(contangoTimelock);
-        (instrument, yieldInstrument) = contangoYield.createYieldInstrument(
-            symbol, constants.FYETH2212, constants.FYUSDC2212, constants.FEE_0_05, feeModel
-        );
+        (instrument, yieldInstrument) =
+            contangoYield.createYieldInstrument(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
 
         vm.startPrank(yieldTimelock);
         ICompositeMultiOracle compositeOracle = ICompositeMultiOracle(0x750B3a18115fe090Bc621F9E4B90bd442bcd02F2);
@@ -47,7 +53,8 @@ contract YieldPositionSizeTest is
             symbol: symbol,
             quantity: 0.1 ether,
             collateral: 0,
-            collateralSlippage: collateralSlippage
+            collateralSlippage: collateralSlippage,
+            uniswapFee: uniswapFee
         });
         ModifyCostResult memory result = contangoQuoter.openingCostForPosition(params);
 
@@ -67,7 +74,8 @@ contract YieldPositionSizeTest is
             result.cost.abs() + Yield.BORROWING_BUFFER + 1,
             result.collateralUsed.toUint256(),
             trader,
-            HIGH_LIQUIDITY
+            HIGH_LIQUIDITY,
+            uniswapFee
         );
     }
 
@@ -75,14 +83,17 @@ contract YieldPositionSizeTest is
         (PositionId positionId,) = _openPosition(0.2 ether);
 
         // Reduce position
-        ModifyCostResult memory result =
-            contangoQuoter.modifyCostForPosition(ModifyCostParams(positionId, -0.08 ether, 0, collateralSlippage));
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(
+            ModifyCostParams(positionId, -0.08 ether, 0, collateralSlippage, uniswapFee)
+        );
 
         vm.expectRevert(
             abi.encodeWithSelector(PositionIsTooSmall.selector, 171.761074e6 + Yield.BORROWING_BUFFER, 200e6)
         );
         vm.prank(trader);
-        contango.modifyPosition(positionId, -0.08 ether, result.cost.abs(), 0, trader, result.quoteLendingLiquidity);
+        contango.modifyPosition(
+            positionId, -0.08 ether, result.cost.abs(), 0, trader, result.quoteLendingLiquidity, uniswapFee
+        );
     }
 }
 
@@ -101,7 +112,7 @@ contract YieldDebtLimitsTest is WithYieldFixtures(constants.yETHUSDC2212, consta
         dealAndApprove(address(USDC), trader, 6000e6, address(contango));
         vm.expectRevert("Max debt exceeded");
         vm.prank(trader);
-        contango.modifyPosition(positionId, 10 ether, type(uint256).max, 6000e6, trader, 0);
+        contango.modifyPosition(positionId, 10 ether, type(uint256).max, 6000e6, trader, 0, uniswapFee);
 
         // assert unchanged debt limits
         DataTypes.Debt memory debtAfter = cauldron.debt(series.baseId, yieldInstrument.baseId);

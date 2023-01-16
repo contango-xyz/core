@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.17;
 
-import "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
+import "solmate/src/tokens/ERC20.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "@openzeppelin/contracts/utils/math/SignedMath.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
@@ -9,24 +9,20 @@ import {IQuoter} from "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
 import {DataTypes} from "@yield-protocol/vault-v2/contracts/interfaces/DataTypes.sol";
 import {ICauldron} from "@yield-protocol/vault-v2/contracts/interfaces/ICauldron.sol";
 
-import {CodecLib} from "../../libraries/CodecLib.sol";
-import {ContangoPositionNFT} from "../../ContangoPositionNFT.sol";
-import {IContangoQuoter} from "../../interfaces/IContangoQuoter.sol";
-
-import "../../libraries/DataTypes.sol";
+import "../../libraries/CodecLib.sol";
+import "../../ContangoPositionNFT.sol";
+import "../../interfaces/IContangoQuoter.sol";
+import "../../libraries/QuoterDataTypes.sol";
 import "../../libraries/ErrorLib.sol";
-import {QuoterLib} from "../../libraries/QuoterLib.sol";
-import {SignedMathLib} from "../../libraries/SignedMathLib.sol";
-import {YieldUtils} from "./YieldUtils.sol";
-
-import {ContangoYield} from "./ContangoYield.sol";
+import "../../libraries/QuoterLib.sol";
+import "./YieldUtils.sol";
+import "./ContangoYield.sol";
 
 /// @title Contract for quoting position operations
 contract ContangoYieldQuoter is IContangoQuoter {
     using SafeCast for uint256;
     using SafeCast for int256;
     using SignedMath for int256;
-    using SignedMathLib for int256;
     using CodecLib for uint256;
     using QuoterLib for IQuoter;
     using YieldUtils for *;
@@ -46,8 +42,13 @@ contract ContangoYieldQuoter is IContangoQuoter {
     }
 
     /// @inheritdoc IContangoQuoter
-    function positionStatus(PositionId positionId) external override returns (PositionStatus memory result) {
-        (, Instrument memory instrument, YieldInstrument memory yieldInstrument) = _validatePosition(positionId);
+    function positionStatus(PositionId positionId, uint24 uniswapFee)
+        external
+        override
+        returns (PositionStatus memory result)
+    {
+        (, Instrument memory instrument, YieldInstrument memory yieldInstrument) =
+            _validatePosition(positionId, uniswapFee);
         DataTypes.Balances memory balances = cauldron.balances(positionId.toVaultId());
 
         result = _positionStatus(balances, instrument, yieldInstrument);
@@ -62,8 +63,12 @@ contract ContangoYieldQuoter is IContangoQuoter {
         returns (ModifyCostResult memory result)
     {
         (Position memory position, Instrument memory instrument, YieldInstrument memory yieldInstrument) =
-            _validateActivePosition(params.positionId);
+            _validateActivePosition(params.positionId, params.uniswapFee);
         DataTypes.Balances memory balances = cauldron.balances(params.positionId.toVaultId());
+
+        if (params.quantity > 0) {
+            _checkClosingOnly(position.symbol, instrument);
+        }
 
         result = _modifyCostForLongPosition(
             balances, instrument, yieldInstrument, params.quantity, params.collateral, params.collateralSlippage
@@ -84,7 +89,9 @@ contract ContangoYieldQuoter is IContangoQuoter {
         returns (ModifyCostResult memory result)
     {
         (Instrument memory instrument, YieldInstrument memory yieldInstrument) =
-            contangoYield.yieldInstrument(params.symbol);
+            _instrument(params.symbol, params.uniswapFee);
+
+        _checkClosingOnly(params.symbol, instrument);
 
         result = _modifyCostForLongPosition(
             DataTypes.Balances({art: 0, ink: 0}),
@@ -107,6 +114,15 @@ contract ContangoYieldQuoter is IContangoQuoter {
     }
 
     // ============================================== private functions ==============================================
+
+    function _checkClosingOnly(Symbol symbol, Instrument memory instrument) private view {
+        if (contangoYield.closingOnly()) {
+            revert ClosingOnly();
+        }
+        if (instrument.closingOnly) {
+            revert InstrumentClosingOnly(symbol);
+        }
+    }
 
     function _positionStatus(
         DataTypes.Balances memory balances,
@@ -277,7 +293,7 @@ contract ContangoYieldQuoter is IContangoQuoter {
         // this covers the case where there is no existing debt, which applies to new positions or fully liquidated positions
         if (balances.art == 0) {
             uint256 minDebtPV = instrument.quotePool.sellFYTokenPreview(result.minDebt);
-            result.maxCollateral = spotCost.absi() - int256(minDebtPV);
+            result.maxCollateral = int256(spotCost.abs() - minDebtPV);
         } else {
             uint128 maxFYTokenOut = instrument.quotePool.maxFYTokenOut.cap();
             uint128 maxDebtThatCanBeBurned = balances.art - result.minDebt;
@@ -415,7 +431,7 @@ contract ContangoYieldQuoter is IContangoQuoter {
         return cauldron.debtToBase(yieldInstrument.quoteId, balances.art) + position.protocolFees;
     }
 
-    function _validatePosition(PositionId positionId)
+    function _validatePosition(PositionId positionId, uint24 uniswapFee)
         private
         view
         returns (Position memory position, Instrument memory instrument, YieldInstrument memory yieldInstrument)
@@ -426,15 +442,15 @@ contract ContangoYieldQuoter is IContangoQuoter {
                 revert InvalidPosition(positionId);
             }
         }
-        (instrument, yieldInstrument) = contangoYield.yieldInstrument(position.symbol);
+        (instrument, yieldInstrument) = _instrument(position.symbol, uniswapFee);
     }
 
-    function _validateActivePosition(PositionId positionId)
+    function _validateActivePosition(PositionId positionId, uint24 uniswapFee)
         private
         view
         returns (Position memory position, Instrument memory instrument, YieldInstrument memory yieldInstrument)
     {
-        (position, instrument, yieldInstrument) = _validatePosition(positionId);
+        (position, instrument, yieldInstrument) = _validatePosition(positionId, uniswapFee);
 
         // solhint-disable-next-line not-rely-on-time
         uint256 timestamp = block.timestamp;
@@ -448,13 +464,22 @@ contract ContangoYieldQuoter is IContangoQuoter {
         view
         returns (Position memory position, Instrument memory instrument, YieldInstrument memory yieldInstrument)
     {
-        (position, instrument, yieldInstrument) = _validatePosition(positionId);
+        (position, instrument, yieldInstrument) = _validatePosition(positionId, 0);
 
         // solhint-disable-next-line not-rely-on-time
         uint256 timestamp = block.timestamp;
         if (instrument.maturity > timestamp) {
             revert PositionActive(positionId, instrument.maturity, timestamp);
         }
+    }
+
+    function _instrument(Symbol symbol, uint24 uniswapFee)
+        private
+        view
+        returns (Instrument memory instrument, YieldInstrument memory yieldInstrument)
+    {
+        (instrument, yieldInstrument) = contangoYield.yieldInstrument(symbol);
+        instrument.uniswapFeeTransient = uniswapFee;
     }
 
     receive() external payable {

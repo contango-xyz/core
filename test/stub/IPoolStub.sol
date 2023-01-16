@@ -154,12 +154,15 @@ contract IPoolStub is IPool, ERC20Permit {
         return uint128((fyTokenIn * bid) / 10 ** decimals);
     }
 
-    function mint(address, /* to */ address, /* remainder */ uint256, /* minRatio */ uint256 /* maxRatio */ )
-        external
-        pure
-        override
-        returns (uint256, uint256, uint256)
-    {
+    function mint(
+        address,
+        /* to */
+        address,
+        /* remainder */
+        uint256,
+        /* minRatio */
+        uint256 /* maxRatio */
+    ) external pure override returns (uint256, uint256, uint256) {
         revert NotImplemented("mint");
     }
 
@@ -173,21 +176,25 @@ contract IPoolStub is IPool, ERC20Permit {
         revert NotImplemented("mintWithBase");
     }
 
-    function burn(address, /* baseTo */ address, /* fyTokenTo */ uint256, /* minRatio */ uint256 /* maxRatio */ )
-        external
-        pure
-        override
-        returns (uint256, uint256, uint256)
-    {
+    function burn(
+        address,
+        /* baseTo */
+        address,
+        /* fyTokenTo */
+        uint256,
+        /* minRatio */
+        uint256 /* maxRatio */
+    ) external pure override returns (uint256, uint256, uint256) {
         revert NotImplemented("burn");
     }
 
-    function burnForBase(address, /* to */ uint256, /* minRatio */ uint256 /* maxRatio */ )
-        external
-        pure
-        override
-        returns (uint256, uint256)
-    {
+    function burnForBase(
+        address,
+        /* to */
+        uint256,
+        /* minRatio */
+        uint256 /* maxRatio */
+    ) external pure override returns (uint256, uint256) {
         revert NotImplemented("burnForBase");
     }
 
@@ -255,12 +262,18 @@ contract IPoolStub is IPool, ERC20Permit {
         return getFYTokenBalance();
     }
 
-    function maxFYTokenIn() public view override returns (uint128) {
-        return buyBasePreview(maxBaseOut());
+    function maxFYTokenIn() public view override returns (uint128 _maxFYTokenIn) {
+        uint128 _maxBaseOut = maxBaseOut();
+        if (_maxBaseOut > 0) {
+            _maxFYTokenIn = buyBasePreview(_maxBaseOut);
+        }
     }
 
-    function maxBaseIn() public view override returns (uint128) {
-        return buyFYTokenPreview(maxFYTokenOut());
+    function maxBaseIn() public view override returns (uint128 _maxBaseIn) {
+        uint128 _maxFYTokenOut = maxFYTokenOut();
+        if (_maxFYTokenOut > 0) {
+            _maxBaseIn = buyFYTokenPreview(_maxFYTokenOut);
+        }
     }
 
     function maxBaseOut() public view override returns (uint128) {

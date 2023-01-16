@@ -1,8 +1,6 @@
 //SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.17;
 
-import {IFeeModel} from "../interfaces/IFeeModel.sol";
-
 library CodecLib {
     error InvalidInt128(int256 n);
     error InvalidUInt128(uint256 n);

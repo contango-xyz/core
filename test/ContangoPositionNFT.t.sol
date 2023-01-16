@@ -2,12 +2,11 @@
 pragma solidity 0.8.17;
 
 import "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
-import {Utilities} from "./utils/Utilities.sol";
+import "./utils/Utilities.sol";
 
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-import {PositionId, ContangoPositionNFT} from "src/ContangoPositionNFT.sol";
+import "src/ContangoPositionNFT.sol";
 
 contract ContangoPositionNFTTest is Test {
     Utilities private utils;

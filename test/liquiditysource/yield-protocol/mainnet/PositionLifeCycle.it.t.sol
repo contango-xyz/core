@@ -1,310 +1,77 @@
 //SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.17;
 
+import "../../fixtures/integration/PositionLifeCycleFixtures.sol";
 import "./WithYieldFixtures.sol";
 
-contract YieldMainnetPositionLifeCycleDAIETH2212Test is
-    WithYieldFixtures(constants.yDAIETH2212, constants.FYDAI2212, constants.FYETH2212)
-{
-    using SignedMath for int256;
-    using SafeCast for int256;
-    using YieldUtils for PositionId;
-
-    constructor() {
+contract YieldMainnetPositionLifeCycleTest is WithYieldFixtures {
+    constructor(Symbol _symbol, bytes6 _baseSeriesId, bytes6 _quoteSeriesId)
+        WithYieldFixtures(_symbol, _baseSeriesId, _quoteSeriesId)
+    {
         addLiquidity = true;
-    }
-
-    function testOpenAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(100_000e18);
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenReduceAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(100_000e18);
-
-        // Reduce position
-        _modifyPosition({positionId: positionId, quantity: -1000e18, collateral: 0});
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenIncreaseAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(100_000e18);
-
-        // Increase position
-        _modifyPosition({positionId: positionId, quantity: 5_000e18, collateral: 2.5 ether});
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenReduceDepositMaxAndCloseLongPosition() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(100_000e18);
-
-        // Reduce position
-        _modifyPosition({positionId: positionId, quantity: -1_000e18, collateral: type(int256).max});
-
-        // Close position
-        _closePosition(positionId);
-    }
-}
-
-contract YieldMainnetPositionLifeCycleETHUSDC2212Test is
-    WithYieldFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212)
-{
-    using SafeCast for int256;
-    using SignedMath for int256;
-    using YieldUtils for PositionId;
-
-    constructor() {
-        addLiquidity = true;
-    }
-
-    function testOpenAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenReduceAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Reduce position
-        _modifyPosition({positionId: positionId, quantity: -0.5 ether, collateral: 0});
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenIncreaseAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Increase position
-        _modifyPosition({positionId: positionId, quantity: 0.5 ether, collateral: 300e6});
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenReduceDepositMaxAndCloseLongPosition() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Reduce position
-        _modifyPosition({positionId: positionId, quantity: -0.25 ether, collateral: type(int256).max});
-
-        // Close position
-        _closePosition(positionId);
-    }
-}
-
-contract YieldMainnetPositionLifeCycleETHDAI2212Test is
-    WithYieldFixtures(constants.yETHDAI2212, constants.FYETH2212, constants.FYDAI2212)
-{
-    using SignedMath for int256;
-    using SafeCast for int256;
-    using YieldUtils for PositionId;
-
-    constructor() {
-        addLiquidity = true;
-    }
-
-    function testOpenAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenReduceAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Reduce position
-        _modifyPosition({positionId: positionId, quantity: -0.5 ether, collateral: 0});
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenIncreaseAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Increase position
-        _modifyPosition({positionId: positionId, quantity: 0.5 ether, collateral: 300e18});
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenReduceDepositMaxAndCloseLongPosition() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Reduce position
-        _modifyPosition({positionId: positionId, quantity: -0.5 ether, collateral: type(int256).max});
-
-        // Close position
-        _closePosition(positionId);
     }
 }
 
 contract YieldMainnetPositionLifeCycleDAIETH2303Test is
-    WithYieldFixtures(constants.yDAIETH2303, constants.FYDAI2303, constants.FYETH2303)
+    MainnetPositionLifeCycleDAIETHFixtures,
+    YieldMainnetPositionLifeCycleTest(constants.yDAIETH2303, constants.FYDAI2303, constants.FYETH2303)
 {
-    using SignedMath for int256;
-    using SafeCast for int256;
-    using YieldUtils for PositionId;
-
-    function testOpenAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(100_000e18);
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenReduceAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(100_000e18);
-
-        // Reduce position
-        _modifyPosition({positionId: positionId, quantity: -1000e18, collateral: 0});
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenIncreaseAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(100_000e18);
-
-        // Increase position
-        _modifyPosition({positionId: positionId, quantity: 5_000e18, collateral: 2.5 ether});
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenReduceDepositMaxAndCloseLongPosition() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(100_000e18);
-
-        // Reduce position
-        _modifyPosition({positionId: positionId, quantity: -1_000e18, collateral: type(int256).max});
-
-        // Close position
-        _closePosition(positionId);
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
     }
 }
 
 contract YieldMainnetPositionLifeCycleETHUSDC2303Test is
-    WithYieldFixtures(constants.yETHUSDC2303, constants.FYETH2303, constants.FYUSDC2303)
+    MainnetPositionLifeCycleETHUSDCFixtures,
+    YieldMainnetPositionLifeCycleTest(constants.yETHUSDC2303, constants.FYETH2303, constants.FYUSDC2303)
 {
-    using SafeCast for int256;
-    using SignedMath for int256;
-    using YieldUtils for PositionId;
-
-    function testOpenAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenReduceAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Reduce position
-        _modifyPosition({positionId: positionId, quantity: -0.5 ether, collateral: 0});
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenIncreaseAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Increase position
-        _modifyPosition({positionId: positionId, quantity: 0.5 ether, collateral: 300e6});
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testOpenReduceDepositMaxAndCloseLongPosition() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Reduce position
-        _modifyPosition({positionId: positionId, quantity: -0.25 ether, collateral: type(int256).max});
-
-        // Close position
-        _closePosition(positionId);
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
     }
 }
 
 contract YieldMainnetPositionLifeCycleETHDAI2303Test is
-    WithYieldFixtures(constants.yETHDAI2303, constants.FYETH2303, constants.FYDAI2303)
+    MainnetPositionLifeCycleETHDAIFixtures,
+    YieldMainnetPositionLifeCycleTest(constants.yETHDAI2303, constants.FYETH2303, constants.FYDAI2303)
 {
-    using SignedMath for int256;
-    using SafeCast for int256;
-    using YieldUtils for PositionId;
-
-    function testOpenAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Close position
-        _closePosition(positionId);
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
     }
+}
 
-    function testOpenReduceAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Reduce position
-        _modifyPosition({positionId: positionId, quantity: -0.5 ether, collateral: 0});
-
-        // Close position
-        _closePosition(positionId);
+abstract contract YieldMainnetPositionLifeCycle2306Test is WithYieldFixtures {
+    constructor(Symbol _symbol, bytes6 _baseSeriesId, bytes6 _quoteSeriesId)
+        WithYieldFixtures(_symbol, _baseSeriesId, _quoteSeriesId)
+    {
+        chain = "https://rpc.tenderly.co/fork/203fc4ca-66e4-40a2-b372-713a35097581";
+        chainId = 1;
+        blockNo = 0;
     }
+}
 
-    function testOpenIncreaseAndCloseLong() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
-
-        // Increase position
-        _modifyPosition({positionId: positionId, quantity: 0.5 ether, collateral: 300e18});
-
-        // Close position
-        _closePosition(positionId);
+contract YieldMainnetPositionLifeCycleETHUSDC2306Test is
+    MainnetPositionLifeCycleETHUSDCFixtures,
+    YieldMainnetPositionLifeCycle2306Test(constants.yETHUSDC2306, constants.FYETH2306, constants.FYUSDC2306)
+{
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
     }
+}
 
-    function testOpenReduceDepositMaxAndCloseLongPosition() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(20 ether);
+contract YieldMainnetPositionLifeCycleDAIETH2306Test is
+    MainnetPositionLifeCycleDAIETHFixtures,
+    YieldMainnetPositionLifeCycle2306Test(constants.yDAIETH2306, constants.FYDAI2306, constants.FYETH2306)
+{
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
+    }
+}
 
-        // Reduce position
-        _modifyPosition({positionId: positionId, quantity: -0.5 ether, collateral: type(int256).max});
-
-        // Close position
-        _closePosition(positionId);
+contract YieldMainnetPositionLifeCycleETHDAI2306Test is
+    MainnetPositionLifeCycleETHDAIFixtures,
+    YieldMainnetPositionLifeCycle2306Test(constants.yETHDAI2306, constants.FYETH2306, constants.FYDAI2306)
+{
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
     }
 }

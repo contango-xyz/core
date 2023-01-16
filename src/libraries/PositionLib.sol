@@ -1,10 +1,10 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.17;
 
-import {CodecLib} from "./CodecLib.sol";
-import {Instrument, PositionId, Symbol} from "./DataTypes.sol";
-import {InvalidPayer, InvalidPosition, NotPositionOwner, PositionActive, PositionExpired} from "./ErrorLib.sol";
-import {ConfigStorageLib, StorageLib} from "./StorageLib.sol";
+import "./CodecLib.sol";
+import "./DataTypes.sol";
+import "./ErrorLib.sol";
+import "./StorageLib.sol";
 
 library PositionLib {
     using CodecLib for uint256;
@@ -23,7 +23,6 @@ library PositionLib {
         if (openQuantity == 0) {
             (int256 collateral,) = StorageLib.getPositionBalances()[positionId].decodeI128();
             // Negative collateral means there's nothing left for the trader to get
-            // TODO double check this with the new collateral semantics
             if (0 > collateral) {
                 revert InvalidPosition(positionId);
             }
@@ -45,7 +44,7 @@ library PositionLib {
         }
     }
 
-    function validateActivePosition(PositionId positionId)
+    function validateActivePosition(PositionId positionId, uint24 uniswapFee)
         internal
         view
         returns (uint256 openQuantity, Symbol symbol, Instrument memory instrument)
@@ -58,15 +57,16 @@ library PositionLib {
         if (instrument.maturity <= timestamp) {
             revert PositionExpired(positionId, instrument.maturity, timestamp);
         }
+        instrument.uniswapFeeTransient = uniswapFee;
     }
 
-    function loadActivePosition(PositionId positionId)
+    function loadActivePosition(PositionId positionId, uint24 uniswapFee)
         internal
         view
         returns (uint256 openQuantity, address owner, Symbol symbol, Instrument memory instrument)
     {
         owner = positionOwner(positionId);
-        (openQuantity, symbol, instrument) = validateActivePosition(positionId);
+        (openQuantity, symbol, instrument) = validateActivePosition(positionId, uniswapFee);
     }
 
     function validatePayer(PositionId positionId, address payer, address trader) internal view {

@@ -2,9 +2,7 @@
 pragma solidity 0.8.17;
 
 import "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "src/libraries/TransferLib.sol";
 
 import "../utils/Utilities.sol";
@@ -74,5 +72,5 @@ contract TransferLibTest is Test {
 
 contract TestERC20 is ERC20 {
     // solhint-disable-next-line no-empty-blocks
-    constructor() ERC20("Test", "TST") {}
+    constructor() ERC20("Test", "TST", 18) {}
 }

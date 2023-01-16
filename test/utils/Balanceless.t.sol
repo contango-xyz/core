@@ -1,17 +1,16 @@
 //SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.17;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "solmate/src/tokens/ERC20.sol";
 import "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
-import {Utilities} from "./Utilities.sol";
-import {ERC20Stub} from "../stub/ERC20Stub.sol";
+import "./Utilities.sol";
+import "../stub/ERC20Stub.sol";
 
-import {Balanceless} from "src/utils/Balanceless.sol";
+import "src/utils/Balanceless.sol";
 
 contract BalancelessTest is Test {
     address payable private trader = payable(address(0xb0b));
-    IERC20 private testToken;
+    ERC20 private testToken;
     Utilities private utils;
     BalancelessStub private sut;
 
@@ -44,7 +43,7 @@ contract BalancelessTest is Test {
         vm.deal(address(sut), 1e18);
 
         // expect
-        vm.expectRevert("Address: insufficient balance");
+        vm.expectRevert("ETH_TRANSFER_FAILED");
 
         // when
         sut.collectBalance(address(0), trader, 10e18);
@@ -69,7 +68,7 @@ contract BalancelessTest is Test {
         deal(address(testToken), address(sut), 1e18);
 
         // expect
-        vm.expectRevert("ERC20: transfer amount exceeds balance");
+        vm.expectRevert("TRANSFER_FAILED");
 
         // when
         sut.collectBalance(address(testToken), trader, 10e18);

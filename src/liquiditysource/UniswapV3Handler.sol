@@ -2,7 +2,6 @@
 pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/utils/math/SignedMath.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "../libraries/DataTypes.sol";
 import "../dependencies/Uniswap.sol";
@@ -40,29 +39,25 @@ library UniswapV3Handler {
     /// @param instrument The instrument being swapped
     /// @param baseForQuote True if base if being sold
     /// @param to The address to receive the output of the swap
-    function flashSwap(
-        Callback memory callback,
-        int256 amount,
-        Instrument memory instrument,
-        bool baseForQuote,
-        address to
-    ) internal {
+    function flashSwap(Callback memory callback, Instrument memory instrument, bool baseForQuote, address to)
+        internal
+    {
         callback.instrument = instrument;
+
         (address tokenIn, address tokenOut) = baseForQuote
             ? (address(instrument.base), address(instrument.quote))
             : (address(instrument.quote), address(instrument.base));
+
         bool zeroForOne = tokenIn < tokenOut;
-        IUniswapV3Pool(
-            UNISWAP_FACTORY.computeAddress(
-                PoolAddress.getPoolKey(address(instrument.base), address(instrument.quote), instrument.uniswapFee)
-            )
-        ).swap(
-            to,
-            zeroForOne,
-            amount,
-            (zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1),
-            abi.encode(callback)
-        );
+        PoolAddress.PoolKey memory poolKey = PoolAddress.getPoolKey(tokenIn, tokenOut, instrument.uniswapFeeTransient);
+
+        IUniswapV3Pool(UNISWAP_FACTORY.computeAddress(poolKey)).swap({
+            recipient: to,
+            zeroForOne: zeroForOne,
+            amountSpecified: baseForQuote ? int256(callback.fill.hedgeSize) : -int256(callback.fill.hedgeSize),
+            sqrtPriceLimitX96: (zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1),
+            data: abi.encode(callback)
+        });
     }
 
     function uniswapV3SwapCallback(
@@ -75,23 +70,23 @@ library UniswapV3Handler {
             revert InvalidAmountDeltas(amount0Delta, amount1Delta);
         }
 
-        UniswapV3Handler.Callback memory callback = abi.decode(data, (UniswapV3Handler.Callback));
+        Callback memory callback = abi.decode(data, (Callback));
         Instrument memory instrument = callback.instrument;
-        if (
-            msg.sender
-                != UniswapV3Handler.UNISWAP_FACTORY.computeAddress(
-                    PoolAddress.getPoolKey(address(instrument.base), address(instrument.quote), instrument.uniswapFee)
-                )
-        ) {
+        PoolAddress.PoolKey memory poolKey =
+            PoolAddress.getPoolKey(address(instrument.base), address(instrument.quote), instrument.uniswapFeeTransient);
+
+        if (msg.sender != UNISWAP_FACTORY.computeAddress(poolKey)) {
             revert InvalidCallbackCaller(msg.sender);
         }
 
         bool amount0isBase = instrument.base < instrument.quote;
-        uint256 swapAmount = amount0isBase ? amount0Delta.abs() : amount1Delta.abs();
+        uint256 swapAmount = (amount0isBase ? amount0Delta : amount1Delta).abs();
+
         if (callback.fill.hedgeSize != swapAmount) {
             revert InsufficientHedgeAmount(callback.fill.hedgeSize, swapAmount);
         }
-        callback.fill.hedgeCost = amount0isBase ? amount1Delta.abs() : amount0Delta.abs();
+
+        callback.fill.hedgeCost = (amount0isBase ? amount1Delta : amount0Delta).abs();
         onUniswapCallback(callback);
     }
 }

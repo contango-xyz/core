@@ -8,7 +8,6 @@ abstract contract WithYieldFixtures is YieldFixtures, WithArbitrum {
     constructor(Symbol _symbol, bytes6 _baseSeriesId, bytes6 _quoteSeriesId)
         YieldFixtures(_symbol, _baseSeriesId, _quoteSeriesId)
     {
-        contangoTimelock = address(0xe213C68563EE4c519183AE6c8Fc15d60bEaD95bb);
         contango = ContangoYield(payable(0x30E7348163016B3b6E1621A3Cb40e8CF33CE97db));
         contangoView = IContangoView(address(contango));
 
@@ -22,7 +21,13 @@ abstract contract WithYieldFixtures is YieldFixtures, WithArbitrum {
         blockNo = 29435053;
     }
 
-    function setUp() public virtual override (YieldFixtures, WithArbitrum) {
+    function setUp() public virtual override(YieldFixtures, WithArbitrum) {
         super.setUp();
+
+        // TODO remove when possible
+        vm.startPrank(contangoTimelock);
+        contango.grantRole(contango.EMERGENCY_BREAK(), contangoMultisig);
+        contango.grantRole(contango.OPERATOR(), contangoMultisig);
+        vm.stopPrank();
     }
 }

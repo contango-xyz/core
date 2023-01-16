@@ -2,7 +2,6 @@
 pragma solidity 0.8.17;
 
 import "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
 
 import "src/interfaces/IFeeModel.sol";
 import "src/libraries/CodecLib.sol";

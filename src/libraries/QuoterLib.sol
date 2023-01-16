@@ -2,12 +2,8 @@
 pragma solidity 0.8.17;
 
 import {IQuoter} from "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
-
-import {Instrument, PositionId, Symbol} from "./DataTypes.sol";
-
-import {IContangoView} from "../interfaces/IContangoView.sol";
-import {IFeeModel} from "../interfaces/IFeeModel.sol";
-import {ContangoPositionNFT} from "../ContangoPositionNFT.sol";
+import "../interfaces/IContangoView.sol";
+import "../ContangoPositionNFT.sol";
 
 library QuoterLib {
     function spot(IQuoter quoter, Instrument memory instrument, int256 baseAmount) internal returns (uint256) {
@@ -15,7 +11,7 @@ library QuoterLib {
             return quoter.quoteExactInputSingle({
                 tokenIn: address(instrument.base),
                 tokenOut: address(instrument.quote),
-                fee: instrument.uniswapFee,
+                fee: instrument.uniswapFeeTransient,
                 amountIn: uint256(baseAmount),
                 sqrtPriceLimitX96: 0
             });
@@ -23,7 +19,7 @@ library QuoterLib {
             return quoter.quoteExactOutputSingle({
                 tokenIn: address(instrument.quote),
                 tokenOut: address(instrument.base),
-                fee: instrument.uniswapFee,
+                fee: instrument.uniswapFeeTransient,
                 amountOut: uint256(-baseAmount),
                 sqrtPriceLimitX96: 0
             });

@@ -1,101 +1,67 @@
 //SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.17;
 
+import "../../fixtures/integration/CollateralManagementFixtures.sol";
 import "./WithYieldFixtures.sol";
 
-contract YieldArbitrumCollateralManagementDAITest is
-    WithYieldFixtures(constants.yETHDAI2212, constants.FYETH2212, constants.FYDAI2212)
+contract YieldArbitrumCollateralManagementETHDAI2303Test is
+    ArbitrumCollateralManagementETHDAIFixtures,
+    WithYieldFixtures(constants.yETHDAI2303, constants.FYETH2303, constants.FYDAI2303)
 {
-    using SignedMath for int256;
-    using SafeCast for int256;
-    using YieldUtils for PositionId;
-
-    function setUp() public override {
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
         super.setUp();
-
-        vm.prank(contangoTimelock);
-        contango.setInstrumentUniswapFee(symbol, 3000);
-    }
-
-    function testAddCollateralToPosition() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(2 ether);
-
-        // Add collateral
-        _modifyCollateral({positionId: positionId, collateral: 500e18});
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testRemoveCollateralOnPosition() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(2 ether, 2000e18);
-
-        // Remove collateral
-        _modifyCollateral({positionId: positionId, collateral: -500e18});
-
-        // Close position
-        _closePosition(positionId);
     }
 }
 
-contract YieldArbitrumCollateralManagementETHTest is
-    WithYieldFixtures(constants.yUSDCETH2212, constants.FYUSDC2212, constants.FYETH2212)
+contract YieldArbitrumCollateralManagementUSDCETH2303Test is
+    ArbitrumCollateralManagementUSDCETHFixtures,
+    WithYieldFixtures(constants.yUSDCETH2303, constants.FYUSDC2303, constants.FYETH2303)
 {
-    using SignedMath for int256;
-    using SafeCast for int256;
-    using YieldUtils for PositionId;
-
-    function testAddCollateralToPosition() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(10_000e6);
-
-        // Add collateral
-        _modifyCollateral({positionId: positionId, collateral: 0.5 ether});
-
-        // Close position
-        _closePosition(positionId);
-    }
-
-    function testRemoveCollateralOnPosition() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(10_000e6, 4 ether);
-
-        // Remove collateral
-        _modifyCollateral({positionId: positionId, collateral: -0.5 ether});
-
-        // Close position
-        _closePosition(positionId);
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
     }
 }
 
-contract YieldArbitrumCollateralManagementUSDCTest is
-    WithYieldFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212)
+contract YieldArbitrumCollateralManagementETHUSDC2303Test is
+    ArbitrumCollateralManagementETHUSDCFixtures,
+    WithYieldFixtures(constants.yETHUSDC2303, constants.FYETH2303, constants.FYUSDC2303)
 {
-    using SignedMath for int256;
-    using SafeCast for int256;
-    using YieldUtils for PositionId;
-
-    function testAddCollateralToPosition() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(2 ether);
-
-        // Add collateral
-        _modifyCollateral({positionId: positionId, collateral: 500e6});
-
-        // Close position
-        _closePosition(positionId);
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
     }
+}
 
-    function testRemoveCollateralOnPosition() public {
-        // Open position
-        (PositionId positionId,) = _openPosition(2 ether, 2000e6);
+abstract contract YieldArbitrumPositionLifeCycle2306Test is WithYieldFixtures {
+    constructor(Symbol _symbol, bytes6 _baseSeriesId, bytes6 _quoteSeriesId)
+        WithYieldFixtures(_symbol, _baseSeriesId, _quoteSeriesId)
+    {
+        blockNo = 53513476;
+    }
+}
 
-        // Remove collateral
-        _modifyCollateral({positionId: positionId, collateral: -500e6});
+contract YieldArbitrumCollateralManagementETHDAI2306Test is
+    ArbitrumCollateralManagementETHDAIFixtures,
+    YieldArbitrumPositionLifeCycle2306Test(constants.yETHDAI2306, constants.FYETH2306, constants.FYDAI2306)
+{
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
+    }
+}
 
-        // Close position
-        _closePosition(positionId);
+contract YieldArbitrumCollateralManagementUSDCETH2306Test is
+    ArbitrumCollateralManagementUSDCETHFixtures,
+    YieldArbitrumPositionLifeCycle2306Test(constants.yUSDCETH2306, constants.FYUSDC2306, constants.FYETH2306)
+{
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
+    }
+}
+
+contract YieldArbitrumCollateralManagementETHUSDC2306Test is
+    ArbitrumCollateralManagementETHUSDCFixtures,
+    YieldArbitrumPositionLifeCycle2306Test(constants.yETHUSDC2306, constants.FYETH2306, constants.FYUSDC2306)
+{
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
     }
 }

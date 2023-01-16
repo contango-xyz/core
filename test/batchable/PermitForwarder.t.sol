@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.17;
 
-import {Utilities} from "../utils/Utilities.sol";
+import "../utils/Utilities.sol";
 import "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
 
 import "src/batchable/PermitForwarder.sol";
 

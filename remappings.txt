@@ -10,3 +10,4 @@ dss-interfaces/=lib/dss-interfaces/
 erc3156/=lib/ERC3156/
 forge-std/=lib/forge-std/src/
 @chainlink/=lib/chainlink/
+solmate/=lib/solmate/

@@ -1,23 +1,23 @@
 //SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.17;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {StorageSlot as StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
+import "solmate/src/tokens/ERC20.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "@openzeppelin/contracts/utils/StorageSlot.sol";
 import {DataTypes} from "@yield-protocol/vault-v2/contracts/interfaces/DataTypes.sol";
 import {IContangoLadle} from "@yield-protocol/vault-v2/contracts/other/contango/interfaces/IContangoLadle.sol";
 import {ICauldron} from "@yield-protocol/vault-v2/contracts/interfaces/ICauldron.sol";
 
-import {IFeeModel} from "../interfaces/IFeeModel.sol";
-import {ERC20Lib} from "./ERC20Lib.sol";
+import "../interfaces/IFeeModel.sol";
+import "solmate/src/utils/SafeTransferLib.sol";
 import "./ErrorLib.sol";
 import "./DataTypes.sol";
 import "../ContangoPositionNFT.sol";
 
 // solhint-disable no-inline-assembly
 library StorageLib {
-    event UniswapFeeUpdated(Symbol indexed symbol, uint24 uniswapFee);
     event FeeModelUpdated(Symbol indexed symbol, IFeeModel feeModel);
+    event ClosingOnlySet(Symbol symbol, bool closingOnly);
 
     /// @dev Offset for the initial slot in lib storage, gives us this number of storage slots available
     /// Make sure it's different from any other StorageLib
@@ -88,13 +88,9 @@ library StorageLib {
         emit FeeModelUpdated(symbol, feeModel);
     }
 
-    function setInstrumentUniswapFee(Symbol symbol, uint24 uniswapFee) internal {
-        Instrument storage instrument = StorageLib.getInstruments()[symbol];
-        if (instrument.uniswapFee == 0) {
-            revert InvalidInstrument(symbol);
-        }
-        instrument.uniswapFee = uniswapFee;
-        emit UniswapFeeUpdated(symbol, uniswapFee);
+    function setClosingOnly(Symbol symbol, bool closingOnly) internal {
+        StorageLib.getInstruments()[symbol].closingOnly = closingOnly;
+        emit ClosingOnlySet(symbol, closingOnly);
     }
 
     function _getUint256ToUint256Mapping(StorageId storageId)
@@ -169,7 +165,7 @@ library YieldStorageLib {
         }
     }
 
-    function createInstrument(Symbol symbol, bytes6 baseId, bytes6 quoteId, uint24 uniswapFee, IFeeModel feeModel)
+    function createInstrument(Symbol symbol, bytes6 baseId, bytes6 quoteId, IFeeModel feeModel)
         internal
         returns (Instrument memory instrument, YieldInstrument memory yieldInstrument)
     {
@@ -180,8 +176,7 @@ library YieldStorageLib {
         StorageLib.getInstrumentFeeModel()[symbol] = feeModel;
         IContangoLadle ladle = getLadle();
 
-        (instrument, yieldInstrument) =
-            _createInstrument(ladle, cauldron, baseId, quoteId, uniswapFee, baseSeries, quoteSeries);
+        (instrument, yieldInstrument) = _createInstrument(ladle, cauldron, baseId, quoteId, baseSeries, quoteSeries);
 
         getJoins()[yieldInstrument.baseId] = address(ladle.joins(yieldInstrument.baseId));
         getJoins()[yieldInstrument.quoteId] = address(ladle.joins(yieldInstrument.quoteId));
@@ -197,7 +192,6 @@ library YieldStorageLib {
         ICauldron cauldron,
         bytes6 baseId,
         bytes6 quoteId,
-        uint24 uniswapFee,
         DataTypes.Series memory baseSeries,
         DataTypes.Series memory quoteSeries
     ) private view returns (Instrument memory instrument, YieldInstrument memory yieldInstrument) {
@@ -214,9 +208,8 @@ library YieldStorageLib {
         yieldInstrument.minQuoteDebt = debt.min * uint96(10) ** debt.dec;
 
         instrument.maturity = baseSeries.maturity;
-        instrument.uniswapFee = uniswapFee;
-        instrument.base = IERC20Metadata(yieldInstrument.baseFyToken.underlying());
-        instrument.quote = IERC20Metadata(yieldInstrument.quoteFyToken.underlying());
+        instrument.base = ERC20(yieldInstrument.baseFyToken.underlying());
+        instrument.quote = ERC20(yieldInstrument.quoteFyToken.underlying());
     }
 
     function getJoins() internal pure returns (mapping(bytes12 => address) storage store) {

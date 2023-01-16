@@ -27,7 +27,14 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
     function setUp() public override {
         super.setUp();
 
-        stubPriceWETHUSDC(700e6, 1e6);
+        stubPrice({
+            _base: WETH9,
+            _quote: USDC,
+            baseUsdPrice: 700e6,
+            quoteUsdPrice: 1e6,
+            spread: 1e6,
+            uniswapFee: uniswapFee
+        });
 
         vm.etch(address(yieldInstrument.basePool), getCode(address(new IPoolStub(yieldInstrument.basePool))));
         vm.etch(address(yieldInstrument.quotePool), getCode(address(new IPoolStub(yieldInstrument.quotePool))));
@@ -41,9 +48,9 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
 
         symbol = Symbol.wrap("yETHUSDC2212-2");
         vm.prank(contangoTimelock);
-        (instrument, yieldInstrument) = contangoYield.createYieldInstrument(
-            symbol, constants.FYETH2212, constants.FYUSDC2212, constants.FEE_0_05, feeModel
-        );
+        (instrument, yieldInstrument) =
+            contangoYield.createYieldInstrument(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
+        instrument.uniswapFeeTransient = uniswapFee;
 
         vm.startPrank(yieldTimelock);
         ICompositeMultiOracle compositeOracle = ICompositeMultiOracle(0x750B3a18115fe090Bc621F9E4B90bd442bcd02F2);
