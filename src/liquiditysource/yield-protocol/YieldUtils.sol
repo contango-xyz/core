@@ -3,14 +3,16 @@ pragma solidity 0.8.17;
 
 import {IPool} from "@yield-protocol/yieldspace-tv/src/interfaces/IPool.sol";
 import "../../libraries/StorageLib.sol";
-import "../../libraries/ErrorLib.sol";
+import "../../libraries/Errors.sol";
 import "../../libraries/DataTypes.sol";
+
+import "./YieldStorageLib.sol";
 
 library YieldUtils {
     function loadInstrument(Symbol symbol)
         internal
         view
-        returns (Instrument storage instrument, YieldInstrument storage yieldInstrument)
+        returns (InstrumentStorage storage instrument, YieldInstrumentStorage storage yieldInstrument)
     {
         instrument = StorageLib.getInstruments()[symbol];
         if (instrument.maturity == 0) {
@@ -21,26 +23,6 @@ library YieldUtils {
 
     function toVaultId(PositionId positionId) internal pure returns (bytes12) {
         return bytes12(uint96(PositionId.unwrap(positionId)));
-    }
-
-    /// @dev Ignores liquidity values that are too small to be useful
-    function cap(function() view external returns (uint128) f) internal view returns (uint128) {
-        IPool pool = IPool(f.address);
-        uint128 liquidity = f();
-
-        if (liquidity > 0) {
-            uint256 scaleFactor = pool.scaleFactor();
-            if (scaleFactor == 1 && liquidity <= 1e13 || scaleFactor == 1e12 && liquidity <= 1e3) {
-                liquidity = 0;
-            } else if (f.selector == IPool.maxFYTokenOut.selector) {
-                uint128 balance = uint128(pool.fyToken().balanceOf(f.address));
-                if (balance < liquidity) {
-                    liquidity = balance;
-                }
-            }
-        }
-
-        return liquidity;
     }
 
     function buyFYTokenPreviewFixed(IPool pool, uint128 fyTokenOut) internal view returns (uint128 baseIn) {

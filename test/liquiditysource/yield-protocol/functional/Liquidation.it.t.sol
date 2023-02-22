@@ -1,21 +1,19 @@
 //SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.17;
 
+import "../../fixtures/LiquidationFixtures.sol";
 import "./WithYieldFixtures.sol";
 import {IOraclePoolStub} from "../../../stub/IOraclePoolStub.sol";
 
 contract YieldLiquidationUSDCTest is
+    LiquidationFixtures,
     WithYieldFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212)
 {
     using SignedMath for int256;
-    using Math for uint256;
     using SafeCast for int256;
     using YieldUtils for PositionId;
-    using TestUtils for *;
 
-    address liquidator = address(0xb07);
-
-    function setUp() public override {
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
         super.setUp();
 
         stubPrice({
@@ -27,28 +25,26 @@ contract YieldLiquidationUSDCTest is
             uniswapFee: uniswapFee
         });
 
-        vm.etch(address(yieldInstrument.basePool), getCode(address(new IPoolStub(yieldInstrument.basePool))));
-        vm.etch(address(yieldInstrument.quotePool), getCode(address(new IPoolStub(yieldInstrument.quotePool))));
+        vm.etch(address(instrument.basePool), address(new IPoolStub(instrument.basePool)).code);
+        vm.etch(address(instrument.quotePool), address(new IPoolStub(instrument.quotePool)).code);
 
-        IPoolStub(address(yieldInstrument.basePool)).setBidAsk(0.945e18, 0.955e18);
-        IPoolStub(address(yieldInstrument.quotePool)).setBidAsk(0.895e6, 0.905e6);
+        IPoolStub(address(instrument.basePool)).setBidAsk(0.945e18, 0.955e18);
+        IPoolStub(address(instrument.quotePool)).setBidAsk(0.895e6, 0.905e6);
 
         symbol = Symbol.wrap("yETHUSDC2212-2");
         vm.prank(contangoTimelock);
-        (instrument, yieldInstrument) =
-            contangoYield.createYieldInstrument(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
+        instrument = contangoYield.createYieldInstrumentV2(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
 
         vm.startPrank(yieldTimelock);
-        ICompositeMultiOracle compositeOracle = ICompositeMultiOracle(0x750B3a18115fe090Bc621F9E4B90bd442bcd02F2);
         compositeOracle.setSource(
             constants.FYETH2212,
             constants.ETH_ID,
-            new IOraclePoolStub(IPoolStub(address(yieldInstrument.basePool)), constants.FYETH2212)
+            new IOraclePoolStub(IPoolStub(address(instrument.basePool)), constants.FYETH2212)
         );
         vm.stopPrank();
 
-        _setPoolStubLiquidity(yieldInstrument.basePool, 1_000 ether);
-        _setPoolStubLiquidity(yieldInstrument.quotePool, 1_000_000e6);
+        _setPoolStubLiquidity(instrument.basePool, 1_000 ether);
+        _setPoolStubLiquidity(instrument.quotePool, 1_000_000e6);
     }
 
     function testPartiallyLiquidateAndClosePosition() public {
@@ -94,8 +90,9 @@ contract YieldLiquidationUSDCTest is
 
         (bool success, bytes memory data) = address(contangoQuoter).call(
             abi.encodeWithSelector(
-                contangoQuoter.modifyCostForPosition.selector,
-                ModifyCostParams(positionId, -2 ether, 0, collateralSlippage, uniswapFee)
+                contangoQuoter.modifyCostForPositionWithCollateral.selector,
+                ModifyCostParams(positionId, -2 ether, collateralSlippage, uniswapFee),
+                0
             )
         );
         assertFalse(success);
@@ -265,32 +262,5 @@ contract YieldLiquidationUSDCTest is
         vm.recordLogs();
         vm.prank(liquidator);
         witch.payBase(vaultId, liquidator, 0, type(uint128).max);
-    }
-
-    function _verifyLiquidationEvent(
-        PositionId positionId,
-        Position memory position,
-        uint256 liquidatorCut,
-        uint256 artIn
-    ) private {
-        Vm.Log memory log =
-            vm.getRecordedLogs().first("PositionLiquidated(bytes32,address,uint256,uint256,uint256,int256,int256)");
-        assertEq(log.topics[1], Symbol.unwrap(symbol));
-        assertEq(uint256(log.topics[2]), uint160(address(trader)));
-        assertEq(uint256(log.topics[3]), PositionId.unwrap(positionId));
-        (uint256 openQuantity, uint256 openCost, int256 collateral, int256 realisedPnL) =
-            abi.decode(log.data, (uint256, uint256, int256, int256));
-        assertEqDecimal(openQuantity, position.openQuantity - liquidatorCut, baseDecimals, "openQuantity");
-        uint256 closedCost = (liquidatorCut * position.openCost).ceilDiv(position.openQuantity);
-        assertEqDecimal(openCost, position.openCost - closedCost, 6, "openCost");
-        assertEqDecimal(realisedPnL, int256(artIn) - int256(closedCost), 6, "realisedPnL");
-        assertEqDecimal(collateral, position.collateral + realisedPnL, 6, "collateral");
-
-        Position memory positionAfter = contango.position(positionId);
-        assertEqDecimal(positionAfter.openQuantity, openQuantity, baseDecimals, "openQuantity");
-        assertEqDecimal(positionAfter.openCost, openCost, 6, "openCost");
-        assertEqDecimal(positionAfter.collateral, collateral, 6, "collateral");
-        // We don't charge a fee on liquidation
-        assertEqDecimal(positionAfter.protocolFees, position.protocolFees, 6, "protocolFees");
     }
 }

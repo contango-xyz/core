@@ -67,7 +67,7 @@ contract BatchableTest is Test {
         bytes[] memory calls = new bytes[](1);
         calls[0] = abi.encodeWithSelector(bytes4(keccak256("invalid()")));
 
-        vm.expectRevert(abi.encodeWithSelector(Batchable.TransactionRevertedSilently.selector));
+        vm.expectRevert(Batchable.TransactionRevertedSilently.selector);
 
         sut.batch(calls);
     }

@@ -21,7 +21,12 @@ contract ContangoV2 is ContangoYield {
     // solhint-disable-next-line no-empty-blocks
     constructor(WETH _weth) ContangoYield(_weth) {}
 
-    function position(PositionId positionId) public view override returns (Position memory _position) {
+    function position(PositionId positionId)
+        public
+        view
+        override(ContangoBase, IContangoView)
+        returns (Position memory _position)
+    {
         _position = super.position(positionId);
         _position.protocolFees += 4.2e18;
     }

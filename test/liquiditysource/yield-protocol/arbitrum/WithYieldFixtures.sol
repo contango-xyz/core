@@ -1,6 +1,7 @@
 //SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.17;
 
+import {CompositeMultiOracle} from "@yield-protocol/vault-v2/contracts/oracles/composite/CompositeMultiOracle.sol";
 import "../../../WithArbitrum.sol";
 import "../YieldFixtures.sol";
 
@@ -15,6 +16,7 @@ abstract contract WithYieldFixtures is YieldFixtures, WithArbitrum {
         ladle = IContangoLadle(0x93343C08e2055b7793a3336d659Be348FC1B08f9);
         cauldron = ICauldron(0x44386ddB4C44E7CB8981f97AF89E928Ddd4258DD);
         poolOracle = IPoolOracle(0x210F4e1942bEEc4038743A8f885B870E0c27b414);
+        compositeOracle = CompositeMultiOracle(0x750B3a18115fe090Bc621F9E4B90bd442bcd02F2);
 
         yieldTimelock = address(0xd0a22827Aed2eF5198EbEc0093EA33A4CD641b6c);
 

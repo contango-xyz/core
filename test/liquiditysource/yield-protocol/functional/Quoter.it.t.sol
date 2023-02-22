@@ -13,6 +13,7 @@ import {IOraclePoolStub} from "../../../stub/IOraclePoolStub.sol";
 contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212) {
     using SafeCast for uint256;
     using YieldUtils for *;
+    using YieldQuoterUtils for *;
 
     TestQuoter private testQuoter;
 
@@ -36,11 +37,11 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
             uniswapFee: uniswapFee
         });
 
-        vm.etch(address(yieldInstrument.basePool), getCode(address(new IPoolStub(yieldInstrument.basePool))));
-        vm.etch(address(yieldInstrument.quotePool), getCode(address(new IPoolStub(yieldInstrument.quotePool))));
+        vm.etch(address(instrument.basePool), address(new IPoolStub(instrument.basePool)).code);
+        vm.etch(address(instrument.quotePool), address(new IPoolStub(instrument.quotePool)).code);
 
-        IPoolStub(address(yieldInstrument.basePool)).setBidAsk(0.945e18, 0.955e18);
-        IPoolStub(address(yieldInstrument.quotePool)).setBidAsk(0.895e6, 0.905e6);
+        IPoolStub(address(instrument.basePool)).setBidAsk(0.945e18, 0.955e18);
+        IPoolStub(address(instrument.quotePool)).setBidAsk(0.895e6, 0.905e6);
 
         DataTypes.Debt memory debt = cauldron.debt(constants.USDC_ID, constants.FYETH2212);
         vm.prank(yieldTimelock);
@@ -48,32 +49,29 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
 
         symbol = Symbol.wrap("yETHUSDC2212-2");
         vm.prank(contangoTimelock);
-        (instrument, yieldInstrument) =
-            contangoYield.createYieldInstrument(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
-        instrument.uniswapFeeTransient = uniswapFee;
+        instrument = contangoYield.createYieldInstrumentV2(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
 
         vm.startPrank(yieldTimelock);
-        ICompositeMultiOracle compositeOracle = ICompositeMultiOracle(0x750B3a18115fe090Bc621F9E4B90bd442bcd02F2);
         compositeOracle.setSource(
             constants.FYETH2212,
             constants.ETH_ID,
-            new IOraclePoolStub(IPoolStub(address(yieldInstrument.basePool)), constants.FYETH2212)
+            new IOraclePoolStub(IPoolStub(address(instrument.basePool)), constants.FYETH2212)
         );
         vm.stopPrank();
 
-        testQuoter = new TestQuoter(positionNFT, contangoYield, cauldron, quoter);
+        testQuoter = new TestQuoter(positionNFT, contangoYield, cauldron, quoter, uniswapFee);
 
         // High liquidity by default, tests will override whatever is necessary
-        _setPoolStubLiquidity({pool: yieldInstrument.basePool, borrowing: 1_000 ether, lending: baseMaxFYTokenOut});
-        _setPoolStubLiquidity({pool: yieldInstrument.quotePool, borrowing: 1_000_000e6, lending: quoteMaxFYTokenOut});
+        _setPoolStubLiquidity({pool: instrument.basePool, borrowing: 1_000 ether, lending: baseMaxFYTokenOut});
+        _setPoolStubLiquidity({pool: instrument.quotePool, borrowing: 1_000_000e6, lending: quoteMaxFYTokenOut});
     }
 
-    function testCreatePositionOpenCost() public {
+    function testCreatePositionOpenCost_DesiredCollateral() public {
         // empty account since it's a new position
         DataTypes.Balances memory balances;
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, 800e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, 800e6);
 
         // ETHUSDC: bid 699 / ask 701
         // 2 * 701 = 1402 USDC
@@ -85,12 +83,12 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // 2 * 0.955 (ask rate) = 1.91 ETH
         // 1.91 * 701 = 1338.91 (total USDC needed)
         // 1338.91 - 800 (user collateral) = 538.91 (total USDC we need to borrow)
-        // how many fUSDC do I need, so that I can acquire 538.91 real USDC?
+        // how many fyUSDC do I need, so that I can acquire 538.91 real USDC?
         // 538.91 / 0.895 (bid rate) = 602.134078 (could be rounded up if underlying protocol precision is greater than quote currency)
         assertApproxEqAbsDecimal(result.underlyingDebt, 602.134078e6, 1, 6, "result.underlyingDebt");
         assertApproxEqAbsDecimal(result.debtDelta, 602.134078e6, 1, 6, "result.debtDelta");
 
-        // sold 602.134078 fUSDC (debtDelta) - borrowed 538.91 USDC
+        // sold 602.134078 fyUSDC (debtDelta) - borrowed 538.91 USDC
         // 602.134078 - 538.91 = 63.224078
         assertApproxEqAbsDecimal(result.financingCost, 63.224078e6, 1, 6, "result.financingCost");
 
@@ -104,7 +102,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.liquidationRatio, 1.4e6, 6, "result.liquidationRatio");
         // underlying collateral valued at 1323 USDC
         // after applying min CR (40%): 945 USDC
-        // 945 fUSDC can borrow at bid rate 0.895 = 845.775 USDC
+        // 945 fyUSDC can borrow at bid rate 0.895 = 845.775 USDC
 
         assertEqDecimal(result.minDebt, 100e6, 6, "result.minDebt");
 
@@ -116,7 +114,149 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, 1249.41e6, 6, "result.maxCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut, "baseLendingLiquidity");
+        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut.liquidityHaircut(), "baseLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, 0, "quoteLendingLiquidity");
+        assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
+    }
+
+    function testDecreasePositionAndIncreaseLeverage() public {
+        // 2 fyETH are worth 1.89 ETH (0.945 * 2)
+        // 1.89 ETH are worth 1323 USDC (1.89 * 700)
+        // for us to have a leverage of 2, our debt should be 661.5 (1323 / 2)
+        DataTypes.Balances memory balances = DataTypes.Balances({art: 661.5e6, ink: 2e18});
+
+        uint256 leverage = 2e18;
+        uint256 tolerance = 0;
+
+        PositionStatus memory positionStatus = testQuoter.positionStatus(balances, instrument);
+        _assertLeverage(positionStatus.underlyingCollateral, positionStatus.underlyingDebt, leverage, tolerance);
+
+        // If we query a quote to increase the position size, and keep the existing leverage of 2,
+        // the `collateralUsed` value should be positive
+        ModifyCostResult memory increaseResult =
+            testQuoter.modifyCostForLongPositionWithLeverage(balances, instrument, 0.5 ether, 2e18);
+        assertTrue(increaseResult.collateralUsed > 0, "increaseResult.collateralUsed");
+        // what should `collateralUsed` equal to?
+        // In theory, an increase of 0.5 ether, retaining the leverage value of 2 should yield
+        // a collateralUsed that matches exactly the result of an opening quote for 0.5 at 2x leverage
+        // lets test that assumption:
+
+        // empty balances
+        DataTypes.Balances memory emptyBalances;
+        ModifyCostResult memory openingResult =
+            testQuoter.modifyCostForLongPositionWithLeverage(emptyBalances, instrument, 0.5 ether, 2e18);
+
+        assertEq(increaseResult.collateralUsed, openingResult.collateralUsed, "collateralUsed matches");
+
+        // what should collateralUsed equal tho?
+
+        // 1st,
+        // our 0.5 fyETH would be valued at 330.75 USDC [ (0.5 * 0.945) * 700 ],
+        // so, for a leverage of 2, our debt should be half of that: 165.375
+
+        // 2nd
+        // to buy 0.5 fyETH, we need 0.4775 ETH (0.955[ask-rate] * 0.5[qty]),
+        // which on the spot market will cost 334,7275 USDC (0.4775 * 701[ask-rate])
+
+        // so far, we know:
+        // * that the spot cost of the trade is 334.7275
+        // * debt issued should be 165.375 fyUSDC
+        // therefore:
+        // * we sell those 165.375 fyUSDC for 148.010625 USDC (0.895 * 165.375)
+        // * 334.7275 - 148.010625 = 186.716875
+
+        assertEqDecimal(openingResult.collateralUsed, 186.716875e6, 6, "collateralUsed 1");
+        assertEqDecimal(increaseResult.collateralUsed, 186.716875e6, 6, "collateralUsed 2");
+
+        // a position of size 2 and leverage 2x, has balances of: {art: 661.5e6, ink: 2e18}
+        // if we reduce the size down to 1.5, but want to keep the same leverage,
+        // post-modification, the balances should look like this: {art: 496.125e6, ink: 1.5e18}
+        // lets assert that this assumption is true:
+        DataTypes.Balances memory balances2 = DataTypes.Balances({art: 496.125e6, ink: 1.5e18});
+        PositionStatus memory positionStatus2 = testQuoter.positionStatus(balances2, instrument);
+        _assertLeverage(positionStatus2.underlyingCollateral, positionStatus2.underlyingDebt, leverage, tolerance);
+
+        // If we query a quote to decrease the position size, but keep the existing leverage of 2,
+        ModifyCostResult memory decreaseResult =
+            testQuoter.modifyCostForLongPositionWithLeverage(balances, instrument, -0.5 ether, 2e18);
+
+        // collateralUsed should be negative [FAILING]
+        assertTrue(decreaseResult.collateralUsed < 0);
+        // leverage should be 2 [FAILING]
+        _assertLeverage(decreaseResult.underlyingCollateral, decreaseResult.underlyingDebt, leverage, tolerance);
+
+        // what should collateralUsed be?
+        // [1] 0.5 * 0.945[bid-rate] = 0.4725 [ fyETH -> ETH ]
+        // [2] 0.4725 * 699[ask-rate] = 330.2775 [ ETH -> USDC ]
+        // [3] 661.5 - 496.125 = 165.375 [ debt that needs to be burned so that remaining debt is 496.125 ]
+        // [4] 165.375 * 0.905 = 149.664375 [ how much USDC it costs to acquire 165.375 fyUSDC ]
+        // [5] 330.2775[2] - 149.664375[4] = 180.613125 [ amount we need to withdraw ]
+        // [6] -180.613125 [ result ]
+
+        // collateralUsed should be -180.613125 [FAILING]
+        assertEqDecimal(decreaseResult.collateralUsed, -180.613125e6, 6, "decreaseResult.collateralUsed");
+
+        // lets test this hypothesis using the collateral version of the quoter:
+        ModifyCostResult memory decreaseResult2 =
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -0.5 ether, -180.613125e6);
+
+        // leverage should be 2
+        _assertLeverage(decreaseResult2.underlyingCollateral, decreaseResult2.underlyingDebt, leverage, tolerance);
+    }
+
+    function testCreatePositionOpenCost_DesiredLeverage() public {
+        // empty account since it's a new position
+        DataTypes.Balances memory balances;
+
+        uint256 leverage = 1.835293426713062884e18;
+
+        ModifyCostResult memory result =
+            testQuoter.modifyCostForLongPositionWithLeverage(balances, instrument, 2 ether, leverage);
+
+        // ETHUSDC: bid 699 / ask 701
+        // 2 * 701 = 1402 USDC
+        assertEqDecimal(result.spotCost, -1402e6, 6, "result.spotCost");
+
+        assertApproxEqAbsDecimal(result.collateralUsed, 800e6, 0.001e6, 6, "result.collateralUsed");
+
+        _assertLeverage(result, leverage, 0.001e18);
+
+        // how much ETH do we need today (PV) to have 2 ETH at expiry?
+        // 2 * 0.955 (ask rate) = 1.91 ETH
+        // 1.91 * 701 = 1338.91 (total USDC needed)
+        // 1338.91 - 800 (user collateral) = 538.91 (total USDC we need to borrow)
+        // how many fyUSDC do I need, so that I can acquire 538.91 real USDC?
+        // 538.91 / 0.895 (bid rate) = 602.134078 (could be rounded up if underlying protocol precision is greater than quote currency)
+        assertApproxEqAbsDecimal(result.underlyingDebt, 602.134078e6, 0.001e6, 6, "result.underlyingDebt");
+        assertApproxEqAbsDecimal(result.debtDelta, 602.134078e6, 0.001e6, 6, "result.debtDelta");
+
+        // sold 602.134078 fyUSDC (debtDelta) - borrowed 538.91 USDC
+        // 602.134078 - 538.91 = 63.224078
+        assertApproxEqAbsDecimal(result.financingCost, 63.224078e6, 0.0001e6, 6, "result.financingCost");
+
+        // collateral posted 800 + debtDelta 602.134078 = 1402.134078 USDC cost
+        assertApproxEqAbsDecimal(result.cost, -1402.134078e6, 0.0001e6, 6, "result.cost");
+
+        // 2 fETH valued at bid rate 0.945 = 1.89 ETH
+        // 1.89 ETH valued at ETHUSD oracle price 700 = 1323 USDC
+        assertEqDecimal(result.underlyingCollateral, 1323e6, 6, "result.underlyingCollateral");
+
+        assertEqDecimal(result.liquidationRatio, 1.4e6, 6, "result.liquidationRatio");
+        // underlying collateral valued at 1323 USDC
+        // after applying min CR (40%): 945 USDC
+        // 945 fyUSDC can borrow at bid rate 0.895 = 845.775 USDC
+
+        assertEqDecimal(result.minDebt, 100e6, 6, "result.minDebt");
+
+        // swap cost 1338.91 - max borrowing 845.775 = 493.135 USDC min collateral
+        assertEqDecimal(result.minCollateral, 493.135e6, 6, "result.minCollateral");
+        // full swap payment
+        // min debt 100 at bid rate 0.895 = min borrow 89.50 USDC
+        // swap cost 1338.91 - min borrow 89.50 = 1249.41 USDC
+        assertEqDecimal(result.maxCollateral, 1249.41e6, 6, "result.maxCollateral");
+
+        assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
+        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut.liquidityHaircut(), "baseLendingLiquidity");
         assertEq(result.quoteLendingLiquidity, 0, "quoteLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
     }
@@ -126,7 +266,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 0.5 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 0.5 ether, 0);
 
         // ETHUSDC: bid 699 / ask 701
         // 0.5 * 701 = 350.5 USDC
@@ -137,7 +277,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // how much ETH do we need today (PV) to have 0.5 ETH at expiry?
         // 0.5 * 0.955 (ask rate) = 0.4775 ETH
         // 0.4775 * 701 = 334.7275 (total USDC we need to borrow)
-        // how many fUSDC do I need, so that I can acquire 334.7275 real USDC?
+        // how many fyUSDC do I need, so that I can acquire 334.7275 real USDC?
         // 334.7275 / 0.895 (bid rate) = 373.997206 (could be rounded up if underlying protocol precision is greater than quote currency)
         // existing debt + new debt
         // 602.134078 + 373.997206 = 976.131284 USDC
@@ -145,7 +285,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertApproxEqAbsDecimal(result.debtDelta, 373.997206e6, 1, 6, "result.debtDelta");
         assertApproxEqAbsDecimal(result.cost, -373.997206e6, 1, 6, "result.cost");
 
-        // sold fUSDC (debtDelta) - borrowed
+        // sold fyUSDC (debtDelta) - borrowed
         // 373.997206 - 334.7275 = 39.269706
         assertApproxEqAbsDecimal(result.financingCost, 39.269706e6, 1, 6, "result.financingCost");
 
@@ -161,7 +301,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // after applying min CR (40%): 1181.25 USDC
         // collateral value - existing debt
         // 1181.25 - 602.134078 = 579.115922 USDC max borrowing
-        // fUSDC can borrow at bid rate
+        // fyUSDC can borrow at bid rate
         // 579.115922 * 0.895 = 518.30875 USDC remaining borrowing
         assertEqDecimal(result.minDebt, 100e6, 6, "result.minDebt");
 
@@ -176,7 +316,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, 789.15884e6, 6, "result.maxCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut, "baseLendingLiquidity");
+        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut.liquidityHaircut(), "baseLendingLiquidity");
         assertEq(result.quoteLendingLiquidity, 0, "quoteLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -188,7 +328,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -0.5 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -0.5 ether, 0);
 
         // ETHUSDC: bid 699 / ask 701
         // 0.5 * 699 = 349.50
@@ -198,13 +338,13 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
 
         // 0.5 * 0.945 (bid rate) = 0.4725 ETH
         // 0.4725 * 699 = 330.2775 (total USDC received)
-        // how many fUSDC can I burn with 330.2775 USDC?
-        // 330.2775 / 0.905 (ask rate) = 364.947513 fUSDC (could be rounded up if underlying protocol precision is greater than quote currency)
-        // existing debt 602.134078 - burnt debt 364.947513 = 237.186565 fUSDC
+        // how many fyUSDC can I burn with 330.2775 USDC?
+        // 330.2775 / 0.905 (ask rate) = 364.947513 fyUSDC (could be rounded up if underlying protocol precision is greater than quote currency)
+        // existing debt 602.134078 - burnt debt 364.947513 = 237.186565 fyUSDC
         assertApproxEqAbsDecimal(result.underlyingDebt, 237.186565e6, 1, 6, "result.underlyingDebt");
         assertApproxEqAbsDecimal(result.debtDelta, -364.947513e6, 1, 6, "result.debtDelta");
 
-        // bought 364.947513 fUSDC (debtDelta) - swapped 330.2775 USDC
+        // bought 364.947513 fyUSDC (debtDelta) - swapped 330.2775 USDC
         // 330.2775 - 364.947513 = -34.670013
         assertEqDecimal(result.financingCost, -34.670013e6, 6, "result.financingCost");
 
@@ -229,7 +369,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, 124.15384e6, 6, "result.maxCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn, "quoteLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn.liquidityHaircut(), "quoteLendingLiquidity");
         assertEq(result.baseLendingLiquidity, 0, "baseLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -241,7 +381,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -2 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -2 ether, 0);
 
         // ETHUSDC: bid 699 / ask 701
         // 2 * 699 = 1398
@@ -266,7 +406,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.minDebt, 100e6, 6, "result.minDebt");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.quoteLendingLiquidity, quoteMaxFYTokenOut, "quoteLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, quoteMaxFYTokenOut.liquidityHaircut(), "quoteLendingLiquidity");
         assertEq(result.baseLendingLiquidity, 0, "baseLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -278,13 +418,13 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 0, 100e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 0, 100e6);
 
         assertEqDecimal(result.spotCost, 0, 6, "result.spotCost");
         assertEqDecimal(result.collateralUsed, 100e6, 6, "result.collateralUsed");
 
-        // how many fUSDC can I burn with 100 USDC?
-        // 100 / 0.905 (ask rate) = 110.497237 fUSDC
+        // how many fyUSDC can I burn with 100 USDC?
+        // 100 / 0.905 (ask rate) = 110.497237 fyUSDC
         // existing debt - burnt debt
         // 602.134078 - 110.497237 = 491.636841 USDC
         assertEqDecimal(result.underlyingDebt, 491.636841e6, 6, "result.underlyingDebt");
@@ -314,7 +454,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, 454.43134e6, 6, "result.maxCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn, "quoteLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn.liquidityHaircut(), "quoteLendingLiquidity");
         assertEq(result.baseLendingLiquidity, 0, "baseLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -326,12 +466,12 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 0, -100e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 0, -100e6);
 
         assertEqDecimal(result.spotCost, 0, 6, "result.spotCost");
         assertEqDecimal(result.collateralUsed, -100e6, 6, "result.collateralUsed");
 
-        // how many fUSDC do I need, so that I can acquire 100 real USDC?
+        // how many fyUSDC do I need, so that I can acquire 100 real USDC?
         // 100 / 0.895 (bid rate) = 111.731843 (could be rounded up if underlying protocol precision is greater than quote currency)
         // existing debt + new debt
         // 602.134078 + 111.731843 = 713.865921 USDC
@@ -379,7 +519,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         Position memory position;
         position.protocolFees = 2.103202e6;
 
-        uint256 deliveryCost = testQuoter.deliveryCostForPosition(balances, yieldInstrument, position);
+        uint256 deliveryCost = testQuoter.deliveryCostForPosition(balances, instrument, position);
 
         // existing debt + fees
         // 602.134078 + 2.103202 = 604.23728
@@ -391,7 +531,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 0.5 ether, 100e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 0.5 ether, 100e6);
 
         // ETHUSDC: bid 699 / ask 701
         // 0.5 * 701 = 350.5 USDC
@@ -404,7 +544,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // 0.4775 * 701 = 334.7275 swap cost
         // swap cost - collateral posted
         // 334.7275 - 100 = 234.7275 total USDC we need to borrow
-        // how many fUSDC do I need, so that I can acquire 234.7275 real USDC?
+        // how many fyUSDC do I need, so that I can acquire 234.7275 real USDC?
         // 234.7275 / 0.895 (bid rate) = 262.265363 (could be rounded up if underlying protocol precision is greater than quote currency)
         // existing debt + new debt
         // 602.134078 + 262.265363 = 864.399441 USDC
@@ -414,7 +554,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // 262.265363 + 100 = 362.265363
         assertApproxEqAbsDecimal(result.cost, -362.265363e6, 1, 6, "result.cost");
 
-        // sold fUSDC (debtDelta) - borrowed
+        // sold fyUSDC (debtDelta) - borrowed
         // 262.265363 - 234.7275 = 27.537863
         assertApproxEqAbsDecimal(result.financingCost, 27.537863e6, 1, 6, "result.financingCost");
 
@@ -430,7 +570,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // after applying min CR (40%): 1181.25 USDC
         // collateral value - existing debt
         // 1181.25 - 602.134078 = 579.115922 USDC max borrowing
-        // fUSDC can borrow at bid rate
+        // fyUSDC can borrow at bid rate
         // 579.115922 * 0.895 = 518.30875 USDC remaining borrowing
         assertEqDecimal(result.minDebt, 100e6, 6, "result.minDebt");
 
@@ -445,8 +585,8 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, 789.15884e6, 6, "result.maxCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut, "baseLendingLiquidity");
-        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn, "quoteLendingLiquidity");
+        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut.liquidityHaircut(), "baseLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn.liquidityHaircut(), "quoteLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
         _assertLiquidity(result);
@@ -457,7 +597,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 0.5 ether, -100e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 0.5 ether, -100e6);
 
         // ETHUSDC: bid 699 / ask 701
         // 0.5 * 701 = 350.5 USDC
@@ -470,7 +610,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // 0.4775 * 701 = 334.7275 swap cost
         // swap cost - collateral withdrawn
         // 334.7275 + 100 = 434.7275 total USDC we need to borrow
-        // how many fUSDC do I need, so that I can acquire 434.7275 real USDC?
+        // how many fyUSDC do I need, so that I can acquire 434.7275 real USDC?
         // 434.7275 / 0.895 (bid rate) = 485.72905 (could be rounded up if underlying protocol precision is greater than quote currency)
         // existing debt + new debt
         // 602.134078 + 485.72905 = 1087.863128 USDC
@@ -480,7 +620,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // 485.72905 - 100 = 385.72905
         assertApproxEqAbsDecimal(result.cost, -385.72905e6, 1, 6, "result.cost");
 
-        // sold fUSDC (debtDelta) - borrowed
+        // sold fyUSDC (debtDelta) - borrowed
         // 485.72905 - 434.7275 = 51.00155
         assertApproxEqAbsDecimal(result.financingCost, 51.00155e6, 1, 6, "result.financingCost");
 
@@ -496,7 +636,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // after applying min CR (40%): 1181.25 USDC
         // collateral value - existing debt
         // 1181.25 - 602.134078 = 579.115922 USDC max borrowing
-        // fUSDC can borrow at bid rate
+        // fyUSDC can borrow at bid rate
         // 579.115922 * 0.895 = 518.30875 USDC remaining borrowing
         assertEqDecimal(result.minDebt, 100e6, 6, "result.minDebt");
 
@@ -511,7 +651,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, 789.15884e6, 6, "result.maxCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut, "baseLendingLiquidity");
+        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut.liquidityHaircut(), "baseLendingLiquidity");
         assertEq(result.quoteLendingLiquidity, 0, "quoteLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -523,7 +663,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -0.5 ether, 100e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -0.5 ether, 100e6);
 
         // ETHUSDC: bid 699 / ask 701
         // 0.5 * 699 = 349.50
@@ -535,14 +675,14 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // 0.4725 * 699 = 330.2775 (total USDC received)
         // swap received + posted collateral
         // 330.2775 + 100 = 430.2775
-        // how many fUSDC can I burn with 430.2775 USDC?
-        // 430.2775 / 0.905 (ask rate) = 475.444751 fUSDC (could be rounded up if underlying protocol precision is greater than quote currency)
+        // how many fyUSDC can I burn with 430.2775 USDC?
+        // 430.2775 / 0.905 (ask rate) = 475.444751 fyUSDC (could be rounded up if underlying protocol precision is greater than quote currency)
         // existing debt - burnt debt
-        // 602.134078 - 475.444751 = 126.689327 fUSDC
+        // 602.134078 - 475.444751 = 126.689327 fyUSDC
         assertApproxEqAbsDecimal(result.underlyingDebt, 126.689327e6, 1, 6, "result.underlyingDebt");
         assertApproxEqAbsDecimal(result.debtDelta, -475.444751e6, 1, 6, "result.debtDelta");
 
-        // bought fUSDC (debtDelta) - (swap cost + posted collateral)
+        // bought fyUSDC (debtDelta) - (swap cost + posted collateral)
         // 475.444751 - (330.2775 + 100) = 45.167251
         assertEqDecimal(result.financingCost, -45.167251e6, 6, "result.financingCost");
 
@@ -568,7 +708,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, 124.15384e6, 6, "result.maxCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn, "quoteLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn.liquidityHaircut(), "quoteLendingLiquidity");
         assertEq(result.baseLendingLiquidity, 0, "baseLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -580,7 +720,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -0.5 ether, -100e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -0.5 ether, -100e6);
 
         // ETHUSDC: bid 699 / ask 701
         // 0.5 * 699 = 349.50
@@ -590,18 +730,18 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
 
         // 0.5 * 0.945 (bid rate) = 0.4725 ETH
         // 0.4725 * 699 = 330.2775 (total USDC received)
-        // how many fUSDC can I burn with 330.2775 USDC?
-        // 330.2775 / 0.905 (ask rate) = 364.947513 fUSDC (could be rounded up if underlying protocol precision is greater than quote currency)
+        // how many fyUSDC can I burn with 330.2775 USDC?
+        // 330.2775 / 0.905 (ask rate) = 364.947513 fyUSDC (could be rounded up if underlying protocol precision is greater than quote currency)
         // withdrawn collateral / ask rate
         // 100 / 0.905 = 110.497237 new debt
         // existing debt - burnt debt + new debt
-        // 602.134078 - 364.947513 + 110.497237 = 347.683802 fUSDC
+        // 602.134078 - 364.947513 + 110.497237 = 347.683802 fyUSDC
         assertApproxEqAbsDecimal(result.underlyingDebt, 347.683802e6, 1, 6, "result.underlyingDebt");
         // new debt - burnt debt
         // 110.497237 - 364.947513 = -254.450276
         assertApproxEqAbsDecimal(result.debtDelta, -254.450276e6, 1, 6, "result.debtDelta");
 
-        // swap cost - bought fUSDC (debtDelta) - collateral withdrawn
+        // swap cost - bought fyUSDC (debtDelta) - collateral withdrawn
         // 330.2775 - 254.450276 - 100 = -24.172776
         assertEqDecimal(result.financingCost, -24.172776e6, 6, "result.financingCost");
 
@@ -627,7 +767,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, 124.15384e6, 6, "result.maxCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn, "quoteLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn.liquidityHaircut(), "quoteLendingLiquidity");
         assertEq(result.baseLendingLiquidity, 0, "baseLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -639,7 +779,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances;
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, 1600e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, 1600e6);
         // exceeds max collateral taken from testCreatePositionOpenCost() test
 
         // ETHUSDC: bid 699 / ask 701
@@ -658,12 +798,12 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.collateralUsed, 1249.41e6, 6, "result.collateralUsed");
 
         // 1338.91 - 1249.41 (user collateral) = 89.5 (total USDC we need to borrow)
-        // how many fUSDC do I need, so that I can acquire 89.5 real USDC?
+        // how many fyUSDC do I need, so that I can acquire 89.5 real USDC?
         // 89.5 / 0.895 (bid rate) = 100 (could be rounded up if underlying protocol precision is greater than quote currency)
         assertApproxEqAbsDecimal(result.underlyingDebt, 100e6, 1, 6, "result.underlyingDebt");
         assertApproxEqAbsDecimal(result.debtDelta, 100e6, 1, 6, "result.debtDelta");
 
-        // sold fUSDC (debtDelta) - borrowed USDC
+        // sold fyUSDC (debtDelta) - borrowed USDC
         // 100 - 89.5 = 10.5
         assertApproxEqAbsDecimal(result.financingCost, 10.5e6, 1, 6, "result.financingCost");
 
@@ -678,13 +818,13 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.liquidationRatio, 1.4e6, 6, "result.liquidationRatio");
         // underlying collateral valued at 1323 USDC
         // after applying min CR (40%): 945 USDC
-        // 945 fUSDC can borrow at bid rate 0.895 = 845.775 USDC
+        // 945 fyUSDC can borrow at bid rate 0.895 = 845.775 USDC
 
         // swap cost 1338.91 - max borrowing 845.775 = 493.135 USDC min collateral
         assertEqDecimal(result.minCollateral, 493.135e6, 6, "result.minCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut, "baseLendingLiquidity");
+        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut.liquidityHaircut(), "baseLendingLiquidity");
         assertEq(result.quoteLendingLiquidity, 0, "quoteLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -696,7 +836,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, 1850e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, 1850e6);
         // exceeds max collateral taken from testIncreasePositionOpenCost() test
 
         // ETHUSDC: bid 699 / ask 701
@@ -725,7 +865,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // 602.134078 - 502.134077 = 100.000001
         assertApproxEqAbsDecimal(result.underlyingDebt, 100.000001e6, 1, 6, "result.underlyingDebt");
 
-        // repayment - sold fUSDC (debtDelta)
+        // repayment - sold fyUSDC (debtDelta)
         // 454.43134 - 502.134077 = -47.702737
         assertApproxEqAbsDecimal(result.financingCost, -47.702737e6, 1, 6, "result.financingCost");
 
@@ -741,14 +881,14 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // underlying collateral valued at 2646 USDC
         // after applying min CR (40%): 1890 USDC
         // collateral value 1890 - existing debt 602.134078 = max borrowing 1287.865922 USDC
-        // 1287.865922 fUSDC can borrow at bid rate 0.895 = remaining borrowing 1152.64 USDC
+        // 1287.865922 fyUSDC can borrow at bid rate 0.895 = remaining borrowing 1152.64 USDC
 
         // swap cost 1338.91 - remaining borrowing 1152.64 = 186.27
         assertEqDecimal(result.minCollateral, 186.27e6, 6, "result.minCollateral");
 
         assertTrue(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut, "baseLendingLiquidity");
-        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn, "quoteLendingLiquidity");
+        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut.liquidityHaircut(), "baseLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn.liquidityHaircut(), "quoteLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
         _assertLiquidity(result);
@@ -759,7 +899,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -1.5 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -1.5 ether, 0);
 
         // ETHUSDC: bid 699 / ask 701
         // 1.5 * 699 = 1048.50
@@ -776,14 +916,14 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, -536.40116e6, 6, "result.maxCollateral");
         assertEqDecimal(result.collateralUsed, -536.40116e6, 6, "result.collateralUsed");
 
-        // how many fUSDC can I burn with 454.43134 USDC?
-        // 454.43134 / 0.905 (ask rate) = 502.134077 fUSDC max debt burn (could be rounded up if underlying protocol precision is greater than quote currency)
+        // how many fyUSDC can I burn with 454.43134 USDC?
+        // 454.43134 / 0.905 (ask rate) = 502.134077 fyUSDC max debt burn (could be rounded up if underlying protocol precision is greater than quote currency)
         // existing debt - max debt burn
         // 602.134078 - 502.134077 = 100 USDC
         assertApproxEqAbsDecimal(result.underlyingDebt, 100e6, 1, 6, "result.underlyingDebt");
         assertApproxEqAbsDecimal(result.debtDelta, -502.134077e6, 1, 6, "result.debtDelta");
 
-        // debt cost - bought fUSDC (debtDelta)
+        // debt cost - bought fyUSDC (debtDelta)
         // 454.43134 - 502.134077 = -47.702737
         assertEqDecimal(result.financingCost, -47.702737e6, 6, "result.financingCost");
 
@@ -800,14 +940,14 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // underlying collateral valued at 330.75 USDC
         // after applying min CR (40%): 236.25 USDC
         // existing debt - collateral value
-        // 602.134078 - 236.25 = 365.884078 fUSDC debt to be burned
+        // 602.134078 - 236.25 = 365.884078 fyUSDC debt to be burned
         // 365.884078 * 0.905 (ask rate) = 331.125090 USDC debt to be burned cost
         // swap cost recovered - debt to be burned cost
         // 990.8325 - 331.125090 = 659.70741 extra collateral
         assertEqDecimal(result.minCollateral, -659.70741e6, 6, "result.minCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn, "quoteLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn.liquidityHaircut(), "quoteLendingLiquidity");
         assertEq(result.baseLendingLiquidity, 0, "baseLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -819,7 +959,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 0, 800e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 0, 800e6);
         // exceeds max collateral taken from testCreatePositionOpenCost() test
 
         assertEqDecimal(result.spotCost, 0, 6, "result.spotCost");
@@ -830,14 +970,14 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, 454.43134e6, 6, "result.maxCollateral");
         assertEqDecimal(result.collateralUsed, 454.43134e6, 6, "result.collateralUsed");
 
-        // how much USDC I need to burn 454.43134 fUSDC?
+        // how much USDC I need to burn 454.43134 fyUSDC?
         // 454.43134 / 0.905 (ask rate) = 502.134077 USDC (could be rounded up if underlying protocol precision is greater than quote currency)
         // existing debt - burnt debt
         // 602.134078 - 502.134077 = 100.000001 USDC
         assertApproxEqAbsDecimal(result.underlyingDebt, 100.000001e6, 1, 6, "result.underlyingDebt");
         assertApproxEqAbsDecimal(result.debtDelta, -502.134077e6, 1, 6, "result.debtDelta");
 
-        // repayment - sold fUSDC (debtDelta)
+        // repayment - sold fyUSDC (debtDelta)
         // 454.43134 - 502.134077 = -47.702737
         assertApproxEqAbsDecimal(result.financingCost, -47.702737e6, 1, 6, "result.financingCost");
         assertApproxEqAbsDecimal(result.cost, 47.702737e6, 1, 6, "result.cost");
@@ -856,7 +996,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.minCollateral, -306.865e6, 6, "result.minCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn, "quoteLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn.liquidityHaircut(), "quoteLendingLiquidity");
         assertEq(result.baseLendingLiquidity, 0, "baseLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -868,7 +1008,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances;
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, 450e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, 450e6);
         // under min collateral taken from testCreatePositionOpenCost() test
 
         // ETHUSDC: bid 699 / ask 701
@@ -886,19 +1026,19 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.liquidationRatio, 1.4e6, 6, "result.liquidationRatio");
         // underlying collateral valued at 1323 USDC
         // after applying min CR (40%): 945 USDC
-        // 945 fUSDC can borrow at bid rate 0.895 = 845.775 USDC
+        // 945 fyUSDC can borrow at bid rate 0.895 = 845.775 USDC
 
         // swap cost 1338.91 - max borrowing 845.775 = 493.135 USDC min collateral
         assertEqDecimal(result.minCollateral, 493.135e6, 6, "result.minCollateral");
         assertEqDecimal(result.collateralUsed, 493.135e6, 6, "result.collateralUsed");
 
         // 1338.91 - 493.135 (user collateral) = 845.775 (total USDC we need to borrow)
-        // how many fUSDC do I need, so that I can acquire 845.775 real USDC?
+        // how many fyUSDC do I need, so that I can acquire 845.775 real USDC?
         // 845.775 / 0.895 (bid rate) = 945 (could be rounded up if underlying protocol precision is greater than quote currency)
         assertApproxEqAbsDecimal(result.underlyingDebt, 945e6, 1, 6, "result.underlyingDebt");
         assertApproxEqAbsDecimal(result.debtDelta, 945e6, 1, 6, "result.debtDelta");
 
-        // sold fUSDC (debtDelta) - borrowed USDC
+        // sold fyUSDC (debtDelta) - borrowed USDC
         // 945 - 845.775 = 99.225
         assertApproxEqAbsDecimal(result.financingCost, 99.225e6, 1, 6, "result.financingCost");
 
@@ -913,7 +1053,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, 1249.41e6, 6, "result.maxCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut, "baseLendingLiquidity");
+        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut.liquidityHaircut(), "baseLendingLiquidity");
         assertEq(result.quoteLendingLiquidity, 0, "quoteLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -925,7 +1065,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, 0);
 
         // ETHUSDC: bid 699 / ask 701
         // 2 * 701 = 1402 USDC
@@ -943,21 +1083,21 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // underlying collateral valued at 2646 USDC
         // after applying min CR (40%): 1890 USDC
         // collateral value 1890 - existing debt 602.134078 = max borrowing 1287.865922 USDC
-        // 1287.865922 fUSDC can borrow at bid rate 0.895 = remaining borrowing 1152.64 USDC
+        // 1287.865922 fyUSDC can borrow at bid rate 0.895 = remaining borrowing 1152.64 USDC
 
         // swap cost 1338.91 - remaining borrowing 1152.64 = 186.27
         assertEqDecimal(result.minCollateral, 186.27e6, 6, "result.minCollateral");
         assertEqDecimal(result.collateralUsed, 186.27e6, 6, "result.collateralUsed");
 
         // 1338.91 - 186.27 (user collateral) = 1152.64 (total USDC we need to borrow)
-        // how many fUSDC do I need, so that I can acquire 1152.64 real USDC?
+        // how many fyUSDC do I need, so that I can acquire 1152.64 real USDC?
         // 1152.64 / 0.895 (bid rate) = 1287.865921 (could be rounded up if underlying protocol precision is greater than quote currency)
         // existing debt + new debt
         // 602.134078 + 1287.865921 = 1889.999999
         assertApproxEqAbsDecimal(result.underlyingDebt, 1889.999999e6, 1, 6, "result.underlyingDebt");
         assertApproxEqAbsDecimal(result.debtDelta, 1287.865921e6, 1, 6, "result.debtDelta");
 
-        // sold fUSDC (debtDelta) - borrowed USDC
+        // sold fyUSDC (debtDelta) - borrowed USDC
         // 1287.865921 - 1152.64 = 135.225921
         assertApproxEqAbsDecimal(result.financingCost, 135.225921e6, 1, 6, "result.financingCost");
 
@@ -974,7 +1114,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, 1793.34134e6, 6, "result.maxCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut, "baseLendingLiquidity");
+        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut.liquidityHaircut(), "baseLendingLiquidity");
         assertEq(result.quoteLendingLiquidity, 0, "quoteLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -986,7 +1126,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -0.5 ether, -400e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -0.5 ether, -400e6);
 
         // ETHUSDC: bid 699 / ask 701
         // 0.5 * 699 = 349.50
@@ -1011,7 +1151,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // underlying collateral valued at 992.25 USDC
         // after applying min CR (40%): 708.75 USDC
         // collateral value - existing debt
-        // 708.75 - 602.134078 = 106.615922 fUSDC available debt
+        // 708.75 - 602.134078 = 106.615922 fyUSDC available debt
         // 106.615922 * 0.895 (bid rate) = 95.42125 USDC available debt cost
         // swap cost recovered - available debt cost
         // 330.2775 + 95.42125 = 425.69875 extra collateral
@@ -1020,13 +1160,13 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
 
         // collateral used + swap cost
         // -400 + 330.2775 = -69.7225 borrowing needed
-        // 69.7225 / 0.895 (bid rate) = 77.902234 fUSDC new debt (could be rounded up if underlying protocol precision is greater than quote currency)
+        // 69.7225 / 0.895 (bid rate) = 77.902234 fyUSDC new debt (could be rounded up if underlying protocol precision is greater than quote currency)
         // existing debt + new debt
         // 602.134078 + 77.902234 = 680.036312 USDC
         assertApproxEqAbsDecimal(result.underlyingDebt, 680.036312e6, 1, 6, "result.underlyingDebt");
         assertApproxEqAbsDecimal(result.debtDelta, 77.902234e6, 1, 6, "result.debtDelta");
 
-        // bought fUSDC - received USDC
+        // bought fyUSDC - received USDC
         // 77.902234 - 69.7225 = 8.179734
         assertApproxEqAbsDecimal(result.financingCost, 8.179734e6, 1, 6, "result.financingCost");
 
@@ -1035,7 +1175,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertApproxEqAbsDecimal(result.cost, 322.097766e6, 1, 6, "result.cost");
 
         assertTrue(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn, "quoteLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn.liquidityHaircut(), "quoteLendingLiquidity");
         assertEq(result.baseLendingLiquidity, 0, "baseLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
@@ -1047,7 +1187,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 0, -450e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 0, -450e6);
         // under min collateral taken from testCreatePositionOpenCost() test
 
         assertEqDecimal(result.spotCost, 0, 6, "result.spotCost");
@@ -1066,7 +1206,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.minCollateral, -306.865e6, 6, "result.minCollateral");
         assertEqDecimal(result.collateralUsed, -306.865e6, 6, "result.collateralUsed");
 
-        // how many fUSDC do I need, so that I can acquire 306.865 real USDC?
+        // how many fyUSDC do I need, so that I can acquire 306.865 real USDC?
         // 306.865 / 0.895 (bid rate) = 342.865921 (could be rounded up if underlying protocol precision is greater than quote currency)
         // existing debt + new debt
         // 602.134078 + 342.865921 = 944.999999 USDC
@@ -1096,10 +1236,10 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances;
 
         // No liquidity for ETH lending
-        _setPoolStubLiquidity({pool: yieldInstrument.basePool, borrowing: 1_000 ether, lending: 0});
+        _setPoolStubLiquidity({pool: instrument.basePool, borrowing: 1_000 ether, lending: 0});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, 800e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, 800e6);
 
         // ETHUSDC: bid 699 / ask 701
         // 2 * 701 = 1402 USDC
@@ -1110,12 +1250,12 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // No base lending liquidity, therefore it's treated as 1:1
         // 2 * 701 = 1402 (total USDC needed)
         // 1402 - 800 (user collateral) = 602 (total USDC we need to borrow)
-        // how many fUSDC do I need, so that I can acquire 602 real USDC?
+        // how many fyUSDC do I need, so that I can acquire 602 real USDC?
         // 602 / 0.895 (bid rate) = 672.625698 (could be rounded up if underlying protocol precision is greater than quote currency)
         assertApproxEqAbsDecimal(result.underlyingDebt, 672.625698e6, 1, 6, "result.underlyingDebt");
         assertApproxEqAbsDecimal(result.debtDelta, 672.625698e6, 1, 6, "result.debtDelta");
 
-        // sold fUSDC (debtDelta) - borrowed USDC
+        // sold fyUSDC (debtDelta) - borrowed USDC
         // 672.625698 - 602 = 70.625698
         assertApproxEqAbsDecimal(result.financingCost, 70.625698e6, 1, 6, "result.financingCost");
 
@@ -1131,7 +1271,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.liquidationRatio, 1.4e6, 6, "result.liquidationRatio");
         // underlying collateral valued at 1323 USDC
         // after applying min CR (40%): 945 USDC
-        // 945 fUSDC can borrow at bid rate 0.895 = 845.775 USDC
+        // 945 fyUSDC can borrow at bid rate 0.895 = 845.775 USDC
 
         assertEqDecimal(result.minDebt, 100e6, 6, "result.minDebt");
 
@@ -1161,10 +1301,10 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         // No liquidity for ETH borrowing
-        _setPoolStubLiquidity({pool: yieldInstrument.basePool, borrowing: 0, lending: 1_000 ether});
+        _setPoolStubLiquidity({pool: instrument.basePool, borrowing: 0, lending: 1_000 ether});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -0.5 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -0.5 ether, 0);
 
         // insufficient base borrowing liquidity for closing/decreasing, therefore no other value is calculated
         assertTrue(result.insufficientLiquidity, "result.insufficientLiquidity");
@@ -1192,10 +1332,10 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 602.134078e6, ink: 2e18});
 
         // No liquidity for USDC lending
-        _setPoolStubLiquidity({pool: yieldInstrument.quotePool, borrowing: 1_000_000e6, lending: 0});
+        _setPoolStubLiquidity({pool: instrument.quotePool, borrowing: 1_000_000e6, lending: 0});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -0.5 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -0.5 ether, 0);
 
         // ETHUSDC: bid 699 / ask 701
         // 0.5 * 699 = 349.50
@@ -1205,13 +1345,13 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
 
         // 0.5 * 0.945 (bid rate) = 0.4725 ETH
         // 0.4725 * 699 = 330.2775 (total USDC received)
-        // No liquidity for quote lending, so can only burn fUSDC 1:1
+        // No liquidity for quote lending, so can only burn fyUSDC 1:1
         // existing debt - burnt debt
-        // 602.134078 - 330.2775 = 271.856578 fUSDC
+        // 602.134078 - 330.2775 = 271.856578 fyUSDC
         assertApproxEqAbsDecimal(result.underlyingDebt, 271.856578e6, 1, 6, "result.underlyingDebt");
         assertApproxEqAbsDecimal(result.debtDelta, -330.2775e6, 1, 6, "result.debtDelta");
 
-        // bought 330.2775 fUSDC (debtDelta) - swapped 330.2775 USDC
+        // bought 330.2775 fyUSDC (debtDelta) - swapped 330.2775 USDC
         // 330.2775 - 330.2775 = 0
         assertEqDecimal(result.financingCost, 0, 6, "result.financingCost");
 
@@ -1232,7 +1372,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.minCollateral, -425.69875e6, 6, "result.minCollateral");
 
         assertEqDecimal(result.minDebt, 100e6, 6, "result.minDebt");
-        // No liquidity for quote lending, so can only burn fUSDC 1:1
+        // No liquidity for quote lending, so can only burn fyUSDC 1:1
         // existing debt - min debt
         // 602.134078 - 100 = 502.134078 USDC max debt cost
         // max debt cost - swap cost recovered
@@ -1254,10 +1394,10 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances;
 
         // No liquidity for USDC borrowing
-        _setPoolStubLiquidity({pool: yieldInstrument.quotePool, borrowing: 0, lending: 1_000_000e6});
+        _setPoolStubLiquidity({pool: instrument.quotePool, borrowing: 0, lending: 1_000_000e6});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, 800e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, 800e6);
 
         // insufficient quote borrowing liquidity for opening/increasing, therefore no other value is calculated
         assertTrue(result.insufficientLiquidity, "result.insufficientLiquidity");
@@ -1285,10 +1425,10 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances;
 
         // limited liquidity for USDC borrowing (minDebt)
-        _setPoolStubLiquidity({pool: yieldInstrument.quotePool, borrowing: 100e6, lending: 1_000_000e6});
+        _setPoolStubLiquidity({pool: instrument.quotePool, borrowing: 100e6, lending: 1_000_000e6});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, 800e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, 800e6);
 
         // ETHUSDC: bid 699 / ask 701
         // 2 * 701 = 1402 USDC
@@ -1298,29 +1438,27 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // 2 * 0.955 (ask rate) = 1.91 ETH
         // 1.91 * 701 = 1338.91 (total USDC needed)
 
-        // only 100 USDC borrowing liquidity
+        // only 100 (95) USDC borrowing liquidity
         // swap cost - max borrowing
-        // 1338.91 - 100 = 1238.91 USDC min collateral
+        // 1338.91 - 95 = 1243.91 USDC min collateral
         // TODO alfredo - why do we have this off by one? approx eq masks it
-        assertEqDecimal(result.minCollateral, 1238.910001e6, 6, "result.minCollateral");
-        assertEqDecimal(result.collateralUsed, 1238.910001e6, 6, "result.collateralUsed");
-        assertApproxEqAbsDecimal(result.minCollateral, 1238.91e6, 1, 6, "result.minCollateral");
-        assertApproxEqAbsDecimal(result.collateralUsed, 1238.91e6, 1, 6, "result.collateralUsed");
+        assertApproxEqAbsDecimal(result.minCollateral, 1243.910002e6, 1, 6, "result.minCollateral");
+        assertApproxEqAbsDecimal(result.collateralUsed, 1243.910002e6, 1, 6, "result.collateralUsed");
 
-        // 1338.91 - 1238.91 (user collateral) = 100 (total USDC we need to borrow)
-        // how many fUSDC do I need, so that I can acquire 100 real USDC?
-        // 100 / 0.895 (bid rate) = 111.731843 (could be rounded up if underlying protocol precision is greater than quote currency)
+        // 1338.91 - 1243.91 (user collateral) = 95 (total USDC we need to borrow)
+        // how many fyUSDC do I need, so that I can acquire 95 real USDC?
+        // 95 / 0.895 (bid rate) = 106.145249 (could be rounded up if underlying protocol precision is greater than quote currency)
         // TODO alfredo -  the above quote is not accurate since it doesn't represent the yield curve close to the liquidity edge
-        assertApproxEqAbsDecimal(result.underlyingDebt, 111.731843e6, 1, 6, "result.underlyingDebt");
-        assertApproxEqAbsDecimal(result.debtDelta, 111.731843e6, 1, 6, "result.debtDelta");
+        assertApproxEqAbsDecimal(result.underlyingDebt, 106.145249e6, 1, 6, "result.underlyingDebt");
+        assertApproxEqAbsDecimal(result.debtDelta, 106.145249e6, 1, 6, "result.debtDelta");
 
-        // sold fUSDC (debtDelta) - borrowed
-        // 111.731843 - 100 = 11.731843
-        assertApproxEqAbsDecimal(result.financingCost, 11.731843e6, 1, 6, "result.financingCost");
+        // sold fyUSDC (debtDelta) - borrowed
+        // 106.145249 - 95 = 11.145251
+        assertApproxEqAbsDecimal(result.financingCost, 11.145251e6, 1, 6, "result.financingCost");
 
         // collateral posted + debtDelta
-        // 1238.91 + 111.731843 = 1350.641843 USDC cost
-        assertApproxEqAbsDecimal(result.cost, -1350.641843e6, 1, 6, "result.cost");
+        // 1243.91 + 106.145249 = 1350.055251 USDC cost
+        assertApproxEqAbsDecimal(result.cost, -1350.055251e6, 1, 6, "result.cost");
 
         // 2 fETH valued at bid rate 0.945 = 1.89 ETH
         // 1.89 ETH valued at ETHUSD oracle price 700 = 1323 USDC
@@ -1330,7 +1468,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.liquidationRatio, 1.4e6, 6, "result.liquidationRatio");
         // underlying collateral valued at 1323 USDC
         // after applying min CR (40%): 945 USDC
-        // 945 fUSDC can borrow at bid rate 0.895 = 845.775 USDC
+        // 945 fyUSDC can borrow at bid rate 0.895 = 845.775 USDC
 
         assertEqDecimal(result.minDebt, 100e6, 6, "result.minDebt");
         // full swap payment
@@ -1339,13 +1477,13 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEqDecimal(result.maxCollateral, 1249.41e6, 6, "result.maxCollateral");
 
         assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
-        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut, "baseLendingLiquidity");
+        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut.liquidityHaircut(), "baseLendingLiquidity");
         assertEq(result.quoteLendingLiquidity, 0, "quoteLendingLiquidity");
         assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
 
         _assertBaseLiquidity(result);
         // assertEqDecimal(result.quotePoolLendingLiquidity, 905_000e6, 6, "result.quotePoolLendingLiquidity");
-        // assertEqDecimal(result.quotePoolBorrowingLiquidity, 111.731843e6, 6, "result.quotePoolBorrowingLiquidity");
+        // assertEqDecimal(result.quotePoolBorrowingLiquidity, 106.145249e6, 6, "result.quotePoolBorrowingLiquidity");
     }
 
     // same as before except:
@@ -1354,7 +1492,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 945e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, 0);
 
         assertEqDecimal(result.cost, -1438.135e6, 6, "cost");
         assertEqDecimal(result.minCollateral, 493.135e6, 6, "minCollateral");
@@ -1377,7 +1515,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
 
         int256 collateral = 600e6;
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, collateral);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, collateral);
 
         assertEqDecimal(result.cost, -1425.597765e6, 6, "cost");
         assertEqDecimal(result.minCollateral, 493.135e6, 6, "minCollateral");
@@ -1402,7 +1540,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
 
         int256 collateral = 600e6;
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, collateral);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, collateral);
 
         assertEqDecimal(result.cost, -1425.597765e6, 6);
         assertEqDecimal(result.minCollateral, 363.36e6, 6, "minCollateral");
@@ -1426,7 +1564,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
 
         int256 collateral = 0;
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 0, collateral);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 0, collateral);
 
         // We have 645 fyUSDC of free collateral.
         // To get the USDC value, we hit the bid rate on the quote pool
@@ -1460,7 +1598,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
 
         int256 collateral = 0;
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, collateral);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, collateral);
 
         assertEqDecimal(result.cost, -1495.988826e6, 6);
         // minCollateral for opening long of 2 ETH is 493.135 (see openingCostMinDiscovery)
@@ -1480,7 +1618,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 945e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -1 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -1 ether, 0);
 
         // 1 fyETH -> 0.945 ETH
         // 0.945 ETH * 699 = 660.555 USDC
@@ -1509,7 +1647,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // ----- REFERENCE VALUES ----- //
         DataTypes.Balances memory balances = DataTypes.Balances({art: 0, ink: 0});
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 1.75 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 1.75 ether, 0);
 
         assertEqDecimal(result.minCollateral, 431.493125e6, 6);
         assertEqDecimal(result.maxCollateral, 1082.04625e6, 6);
@@ -1525,7 +1663,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // That is slightly bigger than in the reference values above, but still pretty close
         // (reason why it should be higher is that you'll be crossing the spread when selling 0.25 of the hedge)
         ModifyCostResult memory openingResult =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, 2 ether, 800e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 2 ether, 800e6);
 
         assertEqDecimal(openingResult.cost, -1402.134078e6, 6, "openingResult.cost");
         assertEqDecimal(openingResult.underlyingDebt, 602.134078e6, 6, "openingResult.underlyingDebt");
@@ -1535,7 +1673,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances2 =
             DataTypes.Balances({art: uint128(openingResult.underlyingDebt), ink: 2 ether});
         ModifyCostResult memory decreaseResult =
-            testQuoter.modifyCostForLongPosition(balances2, instrument, yieldInstrument, -0.25 ether, -1000e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances2, instrument, -0.25 ether, -1000e6);
 
         assertEqDecimal(decreaseResult.cost, 141.540954e6, 6, "decreaseResult.cost");
 
@@ -1554,7 +1692,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 100e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -1 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -1 ether, 0);
 
         // 1 fyETH -> 0.945 ETH
         // 0.945 ETH * 699 = 660.555 USDC
@@ -1587,7 +1725,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 100e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -1 ether, -1000e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -1 ether, -1000e6);
 
         // 1 fyETH -> 0.945 ETH
         // 0.945 ETH * 699 = 660.555 USDC
@@ -1628,7 +1766,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
 
         int256 collateral = -400e6;
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -1 ether, collateral);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -1 ether, collateral);
 
         // 1 fyETH -> 0.945 ETH
         // 0.945 ETH * 699 = 660.555 USDC
@@ -1670,7 +1808,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 945e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -1.5 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -1.5 ether, 0);
 
         // 1.5 fyETH -> 1.4175 ETH
         // 1.4175 ETH * 699 = 990.8325 USDC
@@ -1720,7 +1858,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 945e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -1.5 ether, -300e6);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -1.5 ether, -300e6);
 
         // the min collateral is calculated the same way as above.
         assertEqDecimal(result.minCollateral, -349.41375e6, 6);
@@ -1758,10 +1896,10 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
     function testClosingCostLongPartialCloseInsufficientLiquidityOnBasePool() public {
         DataTypes.Balances memory balances = DataTypes.Balances({art: 945e6, ink: 2e18});
 
-        _setPoolStubLiquidity(yieldInstrument.basePool, 0.5e18);
+        _setPoolStubLiquidity(instrument.basePool, 0.5e18);
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -1 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -1 ether, 0);
 
         assertTrue(result.insufficientLiquidity, "insufficientLiquidity");
         assertEq(result.quoteLendingLiquidity, 0, "quoteLendingLiquidity");
@@ -1772,12 +1910,12 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 945e6, ink: 2e18});
 
         quoteMaxFYTokenOut = 552.486188e6;
-        _setPoolStubLiquidity({pool: yieldInstrument.quotePool, borrowing: 1_000_000e6, lending: quoteMaxFYTokenOut});
+        _setPoolStubLiquidity({pool: instrument.quotePool, borrowing: 1_000_000e6, lending: quoteMaxFYTokenOut});
         quoteMaxBaseIn = 500e6; // 552.486188 * .905
 
         int256 collateral = 0;
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -1 ether, collateral);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -1 ether, collateral);
 
         // 1 fyETH -> 0.945 ETH
         // 0.945 ETH * 699 = 660.555 USDC
@@ -1791,21 +1929,21 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         // currentDebt: 945 fyUSDC
         // minDebt: 100 fyUSDC
         // max debt that can be repaid: 945 - 100 = 845
-        // in theory, the max debt that can be burned is 845 fyUSDC, but the avail liquidity on the lending side is only 500!
+        // in theory, the max debt that can be burned is 845 fyUSDC, but the avail liquidity on the lending side is only 500 => 475!
 
         // Therefore:
-        // The max amount of USDC we can use to buy fyTokens is 500.
-        // 500 / 0.905 = 552.486188 fyUSDC
-        // 845 - 552.486188 = 292.513813
-        // 292.513813: this is the amount of fyUSDC debt that we'll have to mint 1:1 to repay down to min debt limits
+        // The max amount of USDC we can use to buy fyTokens is 475.
+        // 475 / 0.905 = 524.861878453 fyUSDC
+        // 845 - 524.861878453 = 320.138121547
+        // 320.138121547: this is the amount of fyUSDC debt that we'll have to mint 1:1 to repay down to min debt limits
         // We get 660.555 from the spot market
-        // we need to withdraw the difference: (500 + 292.513813) - 660.555 = 131.958813
-        assertEqDecimal(result.maxCollateral, 131.958812e6, 6);
+        // we need to withdraw the difference: (475 + 320.138121547) - 660.555 = 134.583121547
+        assertEqDecimal(result.maxCollateral, 134.583121e6, 6);
 
         // we get 660.555 USDC from the spot market.
         // available liquidity for lending on the quote pool is 500 USDC,
         // so given our collateral input of 0, we assume a partial repayment of debt at 1:1 (use real USDC to mint fyUSDC at 1:1)
-        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn, "quoteLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, quoteMaxBaseIn.liquidityHaircut(), "quoteLendingLiquidity");
         assertEq(result.baseLendingLiquidity, 0, "baseLendingLiquidity");
 
         // this should only be true if there we are unable to perform modification under any circumstances
@@ -1816,27 +1954,24 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         assertEq(result.collateralUsed, collateral);
 
         // 0.945 * 699 = 660.555 (whatever you got out of the spot market)
-        // 660.555 + 52.48 = 713.035
-        // (500 - 552.48) = 52.48 (financing cost recovered by repaying loan early)
-        // 660.555 + 52.48 = 713.035
-        // 660.555 - x = 552.48
-        // 660.555 - 552.48 = 108.075
-        assertEqDecimal(result.cost, 713.041187e6, 6, "cost");
+        // (475 - 524.86) = 49.86 (financing cost recovered by repaying loan early)
+        // 660.555 + 49.86 = 710.415
+        assertEqDecimal(result.cost, 710.416878e6, 6, "cost");
 
         // previous debt: 945 fyUSDC
         // we got 660.555 out of the spot market, all of which we used to repay debt
         // how much were we able to reduce our debt?
 
-        // first, we used 500 (the available liquidity) to buy fyUSDC from the pool.
-        // 500 / 0.905 = 552.486188 fyUSDC
+        // first, we used 500 (475) (the available liquidity) to buy fyUSDC from the pool.
+        // 475 / 0.905 = 524.861878453 fyUSDC
 
-        // we used the remainder: 660.555 - 500 = 160.555 to mint fyUSDC at 1:1 --> 160.555 fyUSDC
+        // we used the remainder: 660.555 - 475 = 185.555 to mint fyUSDC at 1:1 --> 185.555 fyUSDC
 
-        // result: 945 - (552.486188 + 160.555) = 231.958813
-        assertEqDecimal(result.underlyingDebt, 231.958813e6, 6, "underlyingDebt");
+        // result: 945 - (524.861878 + 185.555) = 234.583122
+        assertEqDecimal(result.underlyingDebt, 234.583122e6, 6, "underlyingDebt");
         assertEqDecimal(result.underlyingCollateral, 661.5e6, 6, "underlyingCollateral");
         // result.underlyingCollateral / result.underlyingDebt
-        assertEqDecimal((result.underlyingCollateral * 1e6) / result.underlyingDebt, 2.851799e6, 6);
+        assertEqDecimal((result.underlyingCollateral * 1e6) / result.underlyingDebt, 2.819895e6, 6);
         assertEqDecimal(result.liquidationRatio, 1.4e6, 6, "liquidationRatio");
     }
 
@@ -1845,7 +1980,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 945e6, ink: 2e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -1.5 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -1.5 ether, 0);
 
         assertEqDecimal(result.cost, 1071.1075e6, 6, "cost");
         // we don't assume full repayment of debt. Only repaid to the point where debt equals min
@@ -1858,7 +1993,7 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 0, ink: 0.5e18});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -0.5 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -0.5 ether, 0);
 
         // 0.4725 * 699 = 330.2775 (whatever you got out of the spot market)
         assertEqDecimal(result.cost, 330.2775e6, 6, "cost");
@@ -1871,17 +2006,89 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
         DataTypes.Balances memory balances = DataTypes.Balances({art: 945e6, ink: 2e18});
 
         quoteMaxFYTokenOut = 500e6;
-        _setPoolStubLiquidity({pool: yieldInstrument.quotePool, borrowing: 1_000_000e6, lending: quoteMaxFYTokenOut});
+        _setPoolStubLiquidity({pool: instrument.quotePool, borrowing: 1_000_000e6, lending: quoteMaxFYTokenOut});
 
         ModifyCostResult memory result =
-            testQuoter.modifyCostForLongPosition(balances, instrument, yieldInstrument, -2 ether, 0);
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, -2 ether, 0);
 
-        assertEqDecimal(result.cost, 1368.61e6, 6, "cost");
+        assertEqDecimal(result.cost, 1366.235e6, 6, "cost");
         assertEq(result.underlyingDebt, 0, "underlyingDebt");
         assertEq(result.underlyingCollateral, 0, "underlyingCollateral");
-        assertEq(result.quoteLendingLiquidity, quoteMaxFYTokenOut, "quoteLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, quoteMaxFYTokenOut.liquidityHaircut(), "quoteLendingLiquidity");
         assertEq(result.baseLendingLiquidity, 0, "baseLendingLiquidity");
         assertEqDecimal(result.liquidationRatio, 1.4e6, 6, "liquidationRatio");
+    }
+
+    function testCreatePositionWithASmallQuantity() public {
+        // empty account since it's a new position
+        DataTypes.Balances memory balances;
+
+        ModifyCostResult memory result =
+            testQuoter.modifyCostForLongPositionWithCollateral(balances, instrument, 0.01 ether, 0);
+
+        assertEqDecimal(result.spotCost, -7.01e6, 6, "result.spotCost");
+        assertEqDecimal(result.collateralUsed, 2.465675e6, 6, "result.collateralUsed");
+        assertApproxEqAbsDecimal(result.underlyingDebt, 4.725e6, 1, 6, "result.underlyingDebt");
+        assertApproxEqAbsDecimal(result.debtDelta, 4.725e6, 1, 6, "result.debtDelta");
+        assertApproxEqAbsDecimal(result.financingCost, 0.496125e6, 1, 6, "result.financingCost");
+        assertApproxEqAbsDecimal(result.cost, -7.190675e6, 1, 6, "result.cost");
+        assertEqDecimal(result.underlyingCollateral, 6.615e6, 6, "result.underlyingCollateral");
+        assertEqDecimal(result.liquidationRatio, 1.4e6, 6, "result.liquidationRatio");
+        assertEqDecimal(result.minDebt, 100e6, 6, "result.minDebt");
+        assertEqDecimal(result.minCollateral, 2.465675e6, 6, "result.minCollateral");
+        assertEqDecimal(result.maxCollateral, -82.80545e6, 6, "result.maxCollateral");
+        assertFalse(result.needsBatchedCall, "result.needsBatchedCall");
+        assertEq(result.baseLendingLiquidity, baseMaxFYTokenOut.liquidityHaircut(), "baseLendingLiquidity");
+        assertEq(result.quoteLendingLiquidity, 0, "quoteLendingLiquidity");
+        assertFalse(result.insufficientLiquidity, "result.insufficientLiquidity");
+    }
+
+    function testDesiredLeverageCreatePosition(int256 quantity, uint256 leverage) public {
+        // empty account since it's a new position
+        DataTypes.Balances memory balances;
+
+        quantity = bound(quantity, 0.2 ether, 10 ether);
+        leverage = bound(leverage, 1.1e18, 3.5e18);
+
+        ModifyCostResult memory leverageResult =
+            testQuoter.modifyCostForLongPositionWithLeverage(balances, instrument, quantity, leverage);
+
+        if (
+            leverageResult.collateralUsed != leverageResult.minCollateral
+                && leverageResult.collateralUsed != leverageResult.maxCollateral
+        ) {
+            _assertLeverage(leverageResult, leverage, 0.01e18);
+
+            ModifyCostResult memory collateralResult = testQuoter.modifyCostForLongPositionWithCollateral(
+                balances, instrument, quantity, leverageResult.collateralUsed
+            );
+            _assertLeverage(collateralResult, leverage, 0.01e18);
+        }
+    }
+
+    function testDesiredLeverageModifyPosition(int256 quantity, uint256 leverage) public {
+        DataTypes.Balances memory balances = DataTypes.Balances({art: 3000e6, ink: 10e18});
+
+        quantity = quantity == 0
+            ? int256(0)
+            : (quantity > 0 ? bound(quantity, 0.1 ether, 10 ether) : bound(quantity, -10 ether, -9.9 ether));
+
+        leverage = bound(leverage, 1.1e18, 3.5e18);
+
+        ModifyCostResult memory leverageResult =
+            testQuoter.modifyCostForLongPositionWithLeverage(balances, instrument, quantity, leverage);
+
+        if (
+            leverageResult.collateralUsed != leverageResult.minCollateral
+                && leverageResult.collateralUsed != leverageResult.maxCollateral
+        ) {
+            _assertLeverage(leverageResult, leverage, 0.01e18);
+
+            ModifyCostResult memory collateralResult = testQuoter.modifyCostForLongPositionWithCollateral(
+                balances, instrument, quantity, leverageResult.collateralUsed
+            );
+            _assertLeverage(collateralResult, leverage, 0.01e18);
+        }
     }
 
     function _assertLiquidity(ModifyCostResult memory result) private {
@@ -1903,26 +2110,48 @@ contract YieldQuoterTest is WithYieldFixtures(constants.yETHUSDC2212, constants.
 }
 
 contract TestQuoter is ContangoYieldQuoter {
-    // solhint-disable no-empty-blocks
-    constructor(ContangoPositionNFT _positionNFT, ContangoYield _contangoYield, ICauldron _cauldron, IQuoter _quoter)
-        ContangoYieldQuoter(_positionNFT, _contangoYield, _cauldron, _quoter)
-    {}
+    uint24 private immutable uniswapFee;
 
-    function modifyCostForLongPosition(
+    constructor(
+        ContangoPositionNFT _positionNFT,
+        ContangoYield _contangoYield,
+        ICauldron _cauldron,
+        IQuoter _quoter,
+        uint24 _uniswapFee
+    ) ContangoYieldQuoter(_positionNFT, _contangoYield, _cauldron, _quoter) {
+        uniswapFee = _uniswapFee;
+    }
+
+    function positionStatus(DataTypes.Balances memory balances, YieldInstrument memory instrument)
+        external
+        returns (PositionStatus memory)
+    {
+        return _positionStatus(balances, instrument, uniswapFee);
+    }
+
+    function modifyCostForLongPositionWithCollateral(
         DataTypes.Balances memory balances,
-        Instrument memory instrument,
-        YieldInstrument memory yieldInstrument,
+        YieldInstrument memory instrument,
         int256 quantity,
         int256 collateral
     ) external returns (ModifyCostResult memory) {
-        return _modifyCostForLongPosition(balances, instrument, yieldInstrument, quantity, collateral, 0);
+        return _modifyCostForLongPosition(balances, instrument, quantity, collateral, 0, 0, uniswapFee);
+    }
+
+    function modifyCostForLongPositionWithLeverage(
+        DataTypes.Balances memory balances,
+        YieldInstrument memory instrument,
+        int256 quantity,
+        uint256 leverage
+    ) external returns (ModifyCostResult memory) {
+        return _modifyCostForLongPosition(balances, instrument, quantity, 0, 0, leverage, uniswapFee);
     }
 
     function deliveryCostForPosition(
         DataTypes.Balances memory balances,
-        YieldInstrument memory yieldInstrument,
+        YieldInstrument memory instrument,
         Position memory position
     ) external returns (uint256) {
-        return _deliveryCostForPosition(balances, yieldInstrument, position);
+        return _deliveryCostForPosition(balances, instrument, position);
     }
 }

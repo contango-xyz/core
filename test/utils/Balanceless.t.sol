@@ -31,7 +31,7 @@ contract BalancelessTest is Test {
         // when
         vm.expectEmit(true, true, true, true);
         emit BalanceCollected(address(0), trader, 1e18);
-        sut.collectBalance(address(0), trader, 1e18);
+        sut.collectBalance(ERC20(address(0)), trader, 1e18);
 
         // then
         assertEq(address(sut).balance, 0);
@@ -46,7 +46,7 @@ contract BalancelessTest is Test {
         vm.expectRevert("ETH_TRANSFER_FAILED");
 
         // when
-        sut.collectBalance(address(0), trader, 10e18);
+        sut.collectBalance(ERC20(address(0)), trader, 10e18);
     }
 
     function testCollectBalanceToken() public {
@@ -56,7 +56,7 @@ contract BalancelessTest is Test {
         // when
         vm.expectEmit(true, true, true, true);
         emit BalanceCollected(address(testToken), trader, 1e18);
-        sut.collectBalance(address(testToken), trader, 1e18);
+        sut.collectBalance(testToken, trader, 1e18);
 
         // then
         assertEq(testToken.balanceOf(address(sut)), 0);
@@ -71,12 +71,12 @@ contract BalancelessTest is Test {
         vm.expectRevert("TRANSFER_FAILED");
 
         // when
-        sut.collectBalance(address(testToken), trader, 10e18);
+        sut.collectBalance(testToken, trader, 10e18);
     }
 }
 
 contract BalancelessStub is Balanceless {
-    function collectBalance(address token, address payable to, uint256 amount) external {
+    function collectBalance(ERC20 token, address payable to, uint256 amount) external {
         _collectBalance(token, to, amount);
     }
 }

@@ -6,6 +6,8 @@ import "./StubFixtures.sol";
 
 /// @dev relies on StubETHUSDCFixtures._configureStubs()
 abstract contract CollateralManagementETHUSDCFixtures is PositionFixtures {
+    using TestUtils for *;
+
     function testAddCollateral() public {
         // Open position
         (PositionId positionId, ModifyCostResult memory result) = _openPosition(2 ether, 800e6);
@@ -19,8 +21,9 @@ abstract contract CollateralManagementETHUSDCFixtures is PositionFixtures {
         _assertNoBalances(trader, "trader");
 
         // Add collateral
-        result = _modifyCollateral(positionId, 100e6);
-        assertEqDecimal(result.collateralUsed, 100e6, quoteDecimals, "add collateral result.collateralUsed");
+        int256 depositCollateral = 100e6;
+        result = _modifyCollateral(positionId, depositCollateral);
+        assertEqDecimal(result.collateralUsed, depositCollateral, quoteDecimals, "add collateral result.collateralUsed");
         assertEqDecimal(result.cost, 10.497237e6, quoteDecimals, "add collateral result.cost");
         assertEqDecimal(result.debtDelta, -110.497237e6, quoteDecimals, "add collateral result.debtDelta");
 
@@ -41,6 +44,18 @@ abstract contract CollateralManagementETHUSDCFixtures is PositionFixtures {
         // 797.896798 + 100 - 0.165746 = 897.731052
         assertEqDecimal(position.collateral, 897.731052e6, quoteDecimals, "add collateral collateral");
 
+        {
+            Vm.Log memory _log = recordedLogs.first("CollateralAdded(bytes32,address,uint256,uint256,uint256)");
+            assertEq(_log.topics[1], Symbol.unwrap(symbol));
+            assertEq(uint256(_log.topics[2]), uint160(address(trader)));
+            assertEq(uint256(_log.topics[3]), PositionId.unwrap(positionId));
+
+            (uint256 amount, uint256 cost) = abi.decode(_log.data, (uint256, uint256));
+
+            assertEqDecimal(amount, uint256(depositCollateral), quoteDecimals, "amount");
+            assertEqDecimal(cost, uint256(-result.debtDelta), quoteDecimals, "cost");
+        }
+
         _assertNoBalances(trader, "trader");
     }
 
@@ -57,8 +72,11 @@ abstract contract CollateralManagementETHUSDCFixtures is PositionFixtures {
         _assertNoBalances(trader, "trader");
 
         // Remove collateral
-        result = _modifyCollateral(positionId, -100e6);
-        assertEqDecimal(result.collateralUsed, -100e6, quoteDecimals, "remove collateral result.collateralUsed");
+        int256 withdrawCollateral = -100e6;
+        result = _modifyCollateral(positionId, withdrawCollateral);
+        assertEqDecimal(
+            result.collateralUsed, withdrawCollateral, quoteDecimals, "remove collateral result.collateralUsed"
+        );
         assertApproxEqAbsDecimal(result.cost, -11.731843e6, costBuffer, quoteDecimals, "remove collateral result.cost");
         assertApproxEqAbsDecimal(
             result.debtDelta, 111.731843e6, costBuffer, quoteDecimals, "remove collateral result.debtDelta"
@@ -82,6 +100,18 @@ abstract contract CollateralManagementETHUSDCFixtures is PositionFixtures {
         // open collateral + collateral - fee
         // 797.896798 - 100 - 0.167598 = 697.7292
         assertEqDecimal(position.collateral, 697.7292e6, quoteDecimals, "remove collateral collateral");
+
+        {
+            Vm.Log memory _log = recordedLogs.first("CollateralRemoved(bytes32,address,uint256,uint256,uint256)");
+            assertEq(_log.topics[1], Symbol.unwrap(symbol));
+            assertEq(uint256(_log.topics[2]), uint160(address(trader)));
+            assertEq(uint256(_log.topics[3]), PositionId.unwrap(positionId));
+
+            (uint256 amount, uint256 cost) = abi.decode(_log.data, (uint256, uint256));
+
+            assertEqDecimal(amount, uint256(-withdrawCollateral), quoteDecimals, "amount");
+            assertEqDecimal(cost, uint256(result.debtDelta), quoteDecimals, "cost");
+        }
 
         assertEqDecimal(quote.balanceOf(trader), 100e6, quoteDecimals, "trader USDC balance");
     }

@@ -4,9 +4,8 @@ pragma solidity 0.8.17;
 import "./DataTypes.sol";
 
 struct OpeningCostParams {
-    Symbol symbol; // Instrument to be used
+    Symbol symbol; // InstrumentStorage to be used
     uint256 quantity; // Size of the position
-    uint256 collateral; // How much quote ccy the user will post, if the value is too big/small, a calculated max/min will be used instead
     uint256 collateralSlippage; // How much add to minCollateral and remove from maxCollateral to avoid issues with min/max debt. In %, 1e18 == 100%
     uint24 uniswapFee; // The fee to be used for the quote
 }
@@ -14,7 +13,6 @@ struct OpeningCostParams {
 struct ModifyCostParams {
     PositionId positionId;
     int256 quantity; // How much the size of the position should change by
-    int256 collateral; // How much the collateral of the position should change by, if the value is too big/small, a calculated max/min will be used instead
     uint256 collateralSlippage; // How much add to minCollateral and remove from maxCollateral to avoid issues with min/max debt. In %, 1e18 == 100%
     uint24 uniswapFee; // The fee to be used for the quote
 }

@@ -9,6 +9,8 @@ abstract contract WithMainnet is ContangoTestBase {
         USDC = ERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
         WBTC = ERC20(0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599);
         WETH9 = WETH(payable(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2));
+        // Compound only available in mainnet for now
+        CUSDC = ERC20(0x39AA39c021dfbaE8faC545936693aC917d5E7563);
 
         // https://docs.chain.link/data-feeds/price-feeds/addresses?network=ethereum
         chainlinkUsdOracles[DAI] = 0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9;
@@ -31,6 +33,7 @@ abstract contract WithMainnet is ContangoTestBase {
         vm.label(address(USDC), "USDC");
         vm.label(address(WBTC), "WBTC");
         vm.label(address(WETH9), "WETH");
+        vm.label(address(CUSDC), "cUSDC");
 
         vm.label(chainlinkUsdOracles[DAI], "DAI / USD Oracle");
         vm.label(chainlinkUsdOracles[USDC], "USDC / USD Oracle");

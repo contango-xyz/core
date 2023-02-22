@@ -12,20 +12,41 @@ import "../UniswapV3Handler.sol";
 import "./YieldUtils.sol";
 import "../SlippageLib.sol";
 import "../../libraries/PositionLib.sol";
-import "../../libraries/ErrorLib.sol";
+import "../../libraries/Errors.sol";
 import "../../ExecutionProcessorLib.sol";
 
 library Yield {
     using YieldUtils for *;
     using SignedMath for int256;
-    using SafeCast for int256;
-    using SafeCast for uint256;
-    using SafeCast for uint128;
+    using SafeCast for *;
     using CodecLib for uint256;
     using PositionLib for PositionId;
     using TransferLib for ERC20;
 
-    event ContractTraded(Symbol indexed symbol, address indexed trader, PositionId indexed positionId, Fill fill);
+    /// @dev IMPORTANT - make sure the events here are the same as in IContangoEvents
+    /// this is needed because we're in a library and can't re-use events from an interface
+
+    event ContractBought(
+        Symbol indexed symbol,
+        address indexed trader,
+        PositionId indexed positionId,
+        uint256 size,
+        uint256 cost,
+        uint256 hedgeSize,
+        uint256 hedgeCost,
+        int256 collateral
+    );
+    event ContractSold(
+        Symbol indexed symbol,
+        address indexed trader,
+        PositionId indexed positionId,
+        uint256 size,
+        uint256 cost,
+        uint256 hedgeSize,
+        uint256 hedgeCost,
+        int256 collateral
+    );
+
     event CollateralAdded(
         Symbol indexed symbol, address indexed trader, PositionId indexed positionId, uint256 amount, uint256 cost
     );
@@ -53,9 +74,20 @@ library Yield {
         positionId.validatePayer(payer, trader);
 
         StorageLib.getPositionInstrument()[positionId] = symbol;
-        Instrument memory instrument = _createPosition(symbol, positionId, uniswapFee);
+        InstrumentStorage memory instrument = _createPosition(symbol, positionId);
 
-        _open(symbol, positionId, trader, instrument, quantity, limitCost, int256(collateral), payer, lendingLiquidity);
+        _open(
+            symbol,
+            positionId,
+            trader,
+            instrument,
+            quantity,
+            limitCost,
+            collateral.toInt256(),
+            payer,
+            lendingLiquidity,
+            uniswapFee
+        );
     }
 
     function modifyPosition(
@@ -71,8 +103,8 @@ library Yield {
             revert InvalidQuantity(quantity);
         }
 
-        (uint256 openQuantity, address trader, Symbol symbol, Instrument memory instrument) =
-            positionId.loadActivePosition(uniswapFee);
+        (uint256 openQuantity, address trader, Symbol symbol, InstrumentStorage memory instrument) =
+            positionId.loadActivePosition();
         if (collateral > 0) {
             positionId.validatePayer(payerOrReceiver, trader);
         }
@@ -91,7 +123,8 @@ library Yield {
                 limitCost,
                 collateral,
                 payerOrReceiver,
-                lendingLiquidity
+                lendingLiquidity,
+                uniswapFee
             );
         } else {
             _close(
@@ -103,12 +136,13 @@ library Yield {
                 limitCost,
                 collateral,
                 payerOrReceiver,
-                lendingLiquidity
+                lendingLiquidity,
+                uniswapFee
             );
-        }
 
-        if (quantity < 0 && uint256(-quantity) == openQuantity) {
-            _deletePosition(positionId);
+            if (uint256(-quantity) == openQuantity) {
+                _deletePosition(positionId);
+            }
         }
     }
 
@@ -123,11 +157,11 @@ library Yield {
         );
     }
 
-    function _createPosition(Symbol symbol, PositionId positionId, uint24 uniswapFee)
+    function _createPosition(Symbol symbol, PositionId positionId)
         private
-        returns (Instrument memory instrument)
+        returns (InstrumentStorage memory instrument)
     {
-        YieldInstrument storage yieldInsturment;
+        YieldInstrumentStorage storage yieldInsturment;
         (instrument, yieldInsturment) = symbol.loadInstrument();
 
         // solhint-disable-next-line not-rely-on-time
@@ -139,8 +173,6 @@ library Yield {
         YieldStorageLib.getLadle().deterministicBuild(
             positionId.toVaultId(), yieldInsturment.quoteId, yieldInsturment.baseId
         );
-
-        instrument.uniswapFeeTransient = uniswapFee;
     }
 
     function _deletePosition(PositionId positionId) private {
@@ -152,37 +184,34 @@ library Yield {
         Symbol symbol,
         PositionId positionId,
         address trader,
-        Instrument memory instrument,
+        InstrumentStorage memory instrument,
         uint256 quantity,
         uint256 limitCost,
         int256 collateral,
         address payerOrReceiver,
-        uint256 lendingLiquidity
+        uint256 lendingLiquidity,
+        uint24 uniswapFee
     ) private {
         if (instrument.closingOnly) {
             revert InstrumentClosingOnly(symbol);
         }
 
-        YieldInstrument storage yieldInstrument = YieldStorageLib.getInstruments()[symbol];
-        address receiver = lendingLiquidity < quantity ? address(this) : address(yieldInstrument.basePool);
+        UniswapV3Handler.CallbackInfo memory callbackInfo = UniswapV3Handler.CallbackInfo({
+            symbol: symbol,
+            positionId: positionId,
+            trader: trader,
+            limitCost: limitCost,
+            payerOrReceiver: payerOrReceiver,
+            open: true,
+            lendingLiquidity: lendingLiquidity,
+            uniswapFee: uniswapFee
+        });
+
+        IPool basePool = YieldStorageLib.getInstruments()[symbol].basePool;
+        address receiver = lendingLiquidity < quantity ? address(this) : address(basePool);
 
         // Use a flash swap to buy enough base to hedge the position, pay directly to the pool where we'll lend it
-        _flashBuyHedge(
-            instrument,
-            yieldInstrument.basePool,
-            UniswapV3Handler.CallbackInfo({
-                symbol: symbol,
-                positionId: positionId,
-                trader: trader,
-                limitCost: limitCost,
-                payerOrReceiver: payerOrReceiver,
-                open: true,
-                lendingLiquidity: lendingLiquidity
-            }),
-            quantity,
-            int256(collateral),
-            receiver
-        );
+        _flashBuyHedge(instrument, basePool, callbackInfo, quantity, collateral, receiver);
     }
 
     /// @dev Second step of trading, this executes on the back of the flash swap callback,
@@ -190,10 +219,9 @@ library Yield {
     /// then will borrow the rest from the lending protocol. Fill cost == swap cost + loan interest.
     /// @param callback Info collected before the flash swap started
     function completeOpen(UniswapV3Handler.Callback memory callback) internal {
-        YieldInstrument storage yieldInstrument = YieldStorageLib.getInstruments()[callback.info.symbol];
+        YieldInstrumentStorage storage yieldInstrument = YieldStorageLib.getInstruments()[callback.info.symbol];
 
-        // Cast is safe as the number was previously casted as uint128
-        uint128 ink = uint128(callback.fill.size);
+        uint128 ink = callback.fill.size.toUint128();
 
         // Lend the base we just flash bought
         _buyFYToken({
@@ -209,13 +237,13 @@ library Yield {
         // Use the payer collateral (if any) to pay part/all of the flash swap
         if (callback.fill.collateral > 0) {
             // Trader can contribute up to the spot cost
-            callback.fill.collateral = SignedMath.min(callback.fill.collateral, int256(callback.fill.hedgeCost));
+            callback.fill.collateral = SignedMath.min(callback.fill.collateral, callback.fill.hedgeCost.toInt256());
             callback.instrument.quote.transferOut(
                 callback.info.payerOrReceiver, msg.sender, uint256(callback.fill.collateral)
             );
         }
 
-        uint128 amountToBorrow = (int256(callback.fill.hedgeCost) - callback.fill.collateral).toUint256().toUint128();
+        uint128 amountToBorrow = (callback.fill.hedgeCost.toInt256() - callback.fill.collateral).toUint256().toUint128();
         uint128 art;
 
         // If the collateral wasn't enough to cover the whole trade
@@ -230,8 +258,8 @@ library Yield {
         YieldStorageLib.getLadle().pour(
             callback.info.positionId.toVaultId(), // Vault that will issue the debt & store the collateral
             address(yieldInstrument.quotePool), // If taking any debt, send it to the pool so it can be sold
-            int128(ink), // Use the fyTokens we bought using the flash swap as ink (collateral)
-            int128(art) // Amount to borrow in future value
+            ink.toInt256().toInt128(), // Use the fyTokens we bought using the flash swap as ink (collateral)
+            art.toInt256().toInt128() // Amount to borrow in future value
         );
 
         address sendBorrowedFundsTo;
@@ -272,19 +300,29 @@ library Yield {
             yieldInstrument.minQuoteDebt
         );
 
-        emit ContractTraded(callback.info.symbol, callback.info.trader, callback.info.positionId, callback.fill);
+        emit ContractBought(
+            callback.info.symbol,
+            callback.info.trader,
+            callback.info.positionId,
+            callback.fill.size,
+            callback.fill.cost,
+            callback.fill.hedgeSize,
+            callback.fill.hedgeCost,
+            callback.fill.collateral
+            );
     }
 
     function _close(
         Symbol symbol,
         PositionId positionId,
         address trader,
-        Instrument memory instrument,
+        InstrumentStorage memory instrument,
         uint256 quantity,
         uint256 limitCost,
         int256 collateral,
         address payerOrReceiver,
-        uint256 lendingLiquidity
+        uint256 lendingLiquidity,
+        uint24 uniswapFee
     ) private {
         // Execute a flash swap to undo the hedge
         _flashSellHedge(
@@ -297,7 +335,8 @@ library Yield {
                 trader: trader,
                 payerOrReceiver: payerOrReceiver,
                 open: false,
-                lendingLiquidity: lendingLiquidity
+                lendingLiquidity: lendingLiquidity,
+                uniswapFee: uniswapFee
             }),
             quantity,
             collateral,
@@ -309,7 +348,7 @@ library Yield {
     /// then it will repay debt using the proceeds from the flash swap and deal with any excess appropriately.
     /// @param callback Info collected before the flash swap started
     function completeClose(UniswapV3Handler.Callback memory callback) internal {
-        YieldInstrument storage yieldInstrument = YieldStorageLib.getInstruments()[callback.info.symbol];
+        YieldInstrumentStorage storage yieldInstrument = YieldStorageLib.getInstruments()[callback.info.symbol];
         DataTypes.Balances memory balances =
             YieldStorageLib.getCauldron().balances(callback.info.positionId.toVaultId());
         bool fullyClosing = callback.fill.size == balances.ink;
@@ -320,7 +359,7 @@ library Yield {
             // Use the quote we just bought to buy/mint fyTokens to reduce the debt and free up the amount we owe for the flash loan
             if (fullyClosing) {
                 // If we're fully closing, pay all debt
-                art = -int128(balances.art);
+                art = -balances.art.toInt256().toInt128();
                 // Buy the exact amount of (fy)Quote we owe (art) using the money from the flash swap (money was sent directly to the quotePool).
                 // Send the tokens to the fyToken contract so they can be burnt
                 // Cost == swap cost + pnl of cancelling the debt
@@ -363,15 +402,13 @@ library Yield {
                     }
 
                     // Buy fyTokens with the available tokens
-                    art = -int128(
-                        _getFYTokensToBurn({
-                            pool: yieldInstrument.quotePool,
-                            underlying: callback.instrument.quote,
-                            fyToken: yieldInstrument.quoteFyToken,
-                            availableBase: uint256(quoteUsedToRepayDebt).toUint128(),
-                            lendingLiquidity: callback.info.lendingLiquidity
-                        })
-                    );
+                    art = -_procureFYTokensToBurn({
+                        pool: yieldInstrument.quotePool,
+                        underlying: callback.instrument.quote,
+                        fyToken: yieldInstrument.quoteFyToken,
+                        availableBase: uint256(quoteUsedToRepayDebt).toUint128(),
+                        lendingLiquidity: callback.info.lendingLiquidity
+                    }).toInt256().toInt128();
                 }
 
                 callback.fill.cost = (-(callback.fill.collateral + art)).toUint256();
@@ -385,7 +422,7 @@ library Yield {
 
         // Burn debt and withdraw collateral from Yield, send the collateral directly to the basePool so it can be sold
         YieldStorageLib.getLadle().pour({
-            vaultId_: callback.info.positionId.toVaultId(),
+            vaultId: callback.info.positionId.toVaultId(),
             to: address(yieldInstrument.basePool),
             ink: -int256(callback.fill.size).toInt128(),
             art: art
@@ -393,7 +430,16 @@ library Yield {
         // Sell collateral (ink) to pay for the flash swap, the amount of ink was pre-calculated to obtain the exact cost of the swap
         yieldInstrument.basePool.sellFYToken(msg.sender, uint128(callback.fill.hedgeSize));
 
-        emit ContractTraded(callback.info.symbol, callback.info.trader, callback.info.positionId, callback.fill);
+        emit ContractSold(
+            callback.info.symbol,
+            callback.info.trader,
+            callback.info.positionId,
+            callback.fill.size,
+            callback.fill.cost,
+            callback.fill.hedgeSize,
+            callback.fill.hedgeCost,
+            callback.fill.collateral
+            );
 
         if (fullyClosing) {
             ExecutionProcessorLib.closePosition(
@@ -422,10 +468,10 @@ library Yield {
     // ============== Physical delivery ==============
 
     function deliver(PositionId positionId, address payer, address to) external {
-        address trader = positionId.positionOwner();
+        address trader = positionId.lookupPositionOwner();
         positionId.validatePayer(payer, trader);
 
-        (, Symbol symbol, Instrument memory instrument) = positionId.validateExpiredPosition();
+        (, Symbol symbol, InstrumentStorage memory instrument) = positionId.validateExpiredPosition();
 
         _deliver(symbol, positionId, trader, instrument, payer, to);
 
@@ -436,11 +482,11 @@ library Yield {
         Symbol symbol,
         PositionId positionId,
         address trader,
-        Instrument memory instrument,
+        InstrumentStorage memory instrument,
         address payer,
         address to
     ) private {
-        YieldInstrument storage yieldInstrument = YieldStorageLib.getInstruments()[symbol];
+        YieldInstrumentStorage storage yieldInstrument = YieldStorageLib.getInstruments()[symbol];
         IFYToken baseFyToken = yieldInstrument.baseFyToken;
         ILadle ladle = YieldStorageLib.getLadle();
         ICauldron cauldron = YieldStorageLib.getCauldron();
@@ -494,7 +540,7 @@ library Yield {
         uint256 lendingLiquidity
     ) external {
         // uniswapFee is irrelevant as there'll be no trade on UNI
-        (, address trader, Symbol symbol, Instrument memory instrument) = positionId.loadActivePosition({uniswapFee: 0});
+        (, address trader, Symbol symbol, InstrumentStorage memory instrument) = positionId.loadActivePosition();
 
         if (collateral > 0) {
             positionId.validatePayer(payerOrReceiver, trader);
@@ -518,13 +564,13 @@ library Yield {
         Symbol symbol,
         PositionId positionId,
         address trader,
-        Instrument memory instrument,
+        InstrumentStorage memory instrument,
         uint256 collateral,
         uint256 slippageTolerance,
         address payer,
         uint256 lendingLiquidity
     ) private {
-        YieldInstrument storage yieldInstrument = YieldStorageLib.getInstruments()[symbol];
+        YieldInstrumentStorage storage yieldInstrument = YieldStorageLib.getInstruments()[symbol];
         IPool quotePool = yieldInstrument.quotePool;
 
         address to = collateral > lendingLiquidity ? address(this) : address(quotePool);
@@ -534,7 +580,7 @@ library Yield {
         }
 
         // Sell the collateral and get as much (fy)Quote (art) as possible
-        uint256 art = _getFYTokensToBurn({
+        uint256 art = _procureFYTokensToBurn({
             pool: quotePool,
             underlying: instrument.quote,
             fyToken: yieldInstrument.quoteFyToken,
@@ -549,11 +595,11 @@ library Yield {
             positionId.toVaultId(),
             address(0), // We're not taking new debt, so no need to pass an address
             0, // We're not changing the collateral
-            -int256(art).toInt128() // We burn all the (fy)Quote we just bought
+            -art.toInt256().toInt128() // We burn all the (fy)Quote we just bought
         );
 
         // The interest pnl is reflected on the position cost
-        int256 cost = -int256(art - collateral);
+        int256 cost = -(art - collateral).toInt256();
 
         // cast to int is safe as we prev casted to uint128
         ExecutionProcessorLib.updateCollateral(symbol, positionId, trader, cost, int256(collateral));
@@ -581,7 +627,7 @@ library Yield {
         SlippageLib.requireCostBelowTolerance(art, slippageTolerance);
 
         // The interest pnl is reflected on the position cost
-        int256 cost = int256(art - collateral);
+        int256 cost = (art - collateral).toInt256();
 
         // cast to int is safe as we prev casted to uint128
         ExecutionProcessorLib.updateCollateral(symbol, positionId, trader, cost, -int256(collateral));
@@ -600,7 +646,7 @@ library Yield {
     }
 
     function _flashBuyHedge(
-        Instrument memory instrument,
+        InstrumentStorage memory instrument,
         IPool basePool,
         UniswapV3Handler.CallbackInfo memory callbackInfo,
         uint256 quantity,
@@ -618,7 +664,7 @@ library Yield {
     }
 
     function _flashSellHedge(
-        Instrument memory instrument,
+        InstrumentStorage memory instrument,
         IPool basePool,
         UniswapV3Handler.CallbackInfo memory callbackInfo,
         uint256 quantity,
@@ -637,7 +683,7 @@ library Yield {
 
     // ============== Private functions ==============
 
-    function _getFYTokensToBurn(
+    function _procureFYTokensToBurn(
         IPool pool,
         ERC20 underlying,
         IFYToken fyToken,
@@ -645,7 +691,7 @@ library Yield {
         uint256 lendingLiquidity
     ) private returns (uint128 fyTokenOut) {
         if (availableBase > lendingLiquidity) {
-            uint128 maxBaseIn = uint128(lendingLiquidity);
+            uint128 maxBaseIn = lendingLiquidity.toUint128();
             fyTokenOut = pool.sellBasePreviewZero(maxBaseIn);
             if (fyTokenOut > 0) {
                 // Transfer max amount that can be sold

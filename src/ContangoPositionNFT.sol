@@ -57,7 +57,7 @@ contract ContangoPositionNFT is ERC721URIStorage, AccessControl {
         return AccessControl.supportsInterface(interfaceId) || ERC721.supportsInterface(interfaceId);
     }
 
-    /// @dev To be deprecated by a subgraph. returns all the positions a trader has between the provided boundaries
+    /// @dev returns all the positions a trader has between the provided boundaries
     /// @param owner Trader that owns the positions
     /// @param from Starting position to consider for the search (inclusive)
     /// @param to Ending position to consider for the search (exclusive)

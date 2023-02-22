@@ -1,24 +1,27 @@
 //SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.17;
 
+import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "@openzeppelin/contracts/utils/math/SignedMath.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import "../libraries/DataTypes.sol";
+import "../libraries/StorageDataTypes.sol";
 import "../dependencies/Uniswap.sol";
 
 library UniswapV3Handler {
+    using Address for address;
+    using SafeCast for uint256;
     using SignedMath for int256;
     using PoolAddress for address;
 
-    error InvalidCallbackCaller(address caller);
-
-    error InsufficientHedgeAmount(uint256 hedgeSize, uint256 swapAmount);
-
     error InvalidAmountDeltas(int256 amount0Delta, int256 amount1Delta);
+    error InvalidCallbackCaller(address caller);
+    error InvalidPoolKey(PoolAddress.PoolKey poolKey);
+    error InsufficientHedgeAmount(uint256 hedgeSize, uint256 swapAmount);
 
     struct Callback {
         CallbackInfo info;
-        Instrument instrument;
+        InstrumentStorage instrument;
         Fill fill;
     }
 
@@ -30,6 +33,7 @@ library UniswapV3Handler {
         address payerOrReceiver;
         bool open;
         uint256 lendingLiquidity;
+        uint24 uniswapFee;
     }
 
     address internal constant UNISWAP_FACTORY = 0x1F98431c8aD98523631AE4a59f267346ea31F984;
@@ -39,7 +43,7 @@ library UniswapV3Handler {
     /// @param instrument The instrument being swapped
     /// @param baseForQuote True if base if being sold
     /// @param to The address to receive the output of the swap
-    function flashSwap(Callback memory callback, Instrument memory instrument, bool baseForQuote, address to)
+    function flashSwap(Callback memory callback, InstrumentStorage memory instrument, bool baseForQuote, address to)
         internal
     {
         callback.instrument = instrument;
@@ -49,12 +53,11 @@ library UniswapV3Handler {
             : (address(instrument.quote), address(instrument.base));
 
         bool zeroForOne = tokenIn < tokenOut;
-        PoolAddress.PoolKey memory poolKey = PoolAddress.getPoolKey(tokenIn, tokenOut, instrument.uniswapFeeTransient);
 
-        IUniswapV3Pool(UNISWAP_FACTORY.computeAddress(poolKey)).swap({
+        IUniswapV3Pool(lookupPoolAddress(tokenIn, tokenOut, callback.info.uniswapFee)).swap({
             recipient: to,
             zeroForOne: zeroForOne,
-            amountSpecified: baseForQuote ? int256(callback.fill.hedgeSize) : -int256(callback.fill.hedgeSize),
+            amountSpecified: baseForQuote ? callback.fill.hedgeSize.toInt256() : -callback.fill.hedgeSize.toInt256(),
             sqrtPriceLimitX96: (zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1),
             data: abi.encode(callback)
         });
@@ -71,11 +74,11 @@ library UniswapV3Handler {
         }
 
         Callback memory callback = abi.decode(data, (Callback));
-        Instrument memory instrument = callback.instrument;
-        PoolAddress.PoolKey memory poolKey =
-            PoolAddress.getPoolKey(address(instrument.base), address(instrument.quote), instrument.uniswapFeeTransient);
+        InstrumentStorage memory instrument = callback.instrument;
+        address poolAddress =
+            lookupPoolAddress(address(instrument.base), address(instrument.quote), callback.info.uniswapFee);
 
-        if (msg.sender != UNISWAP_FACTORY.computeAddress(poolKey)) {
+        if (msg.sender != poolAddress) {
             revert InvalidCallbackCaller(msg.sender);
         }
 
@@ -88,5 +91,17 @@ library UniswapV3Handler {
 
         callback.fill.hedgeCost = (amount0isBase ? amount1Delta : amount0Delta).abs();
         onUniswapCallback(callback);
+    }
+
+    function lookupPoolAddress(address token0, address token1, uint24 fee)
+        internal
+        view
+        returns (address poolAddress)
+    {
+        PoolAddress.PoolKey memory poolKey = PoolAddress.getPoolKey(token0, token1, fee);
+        poolAddress = UNISWAP_FACTORY.computeAddress(poolKey);
+        if (!poolAddress.isContract()) {
+            revert InvalidPoolKey(poolKey);
+        }
     }
 }

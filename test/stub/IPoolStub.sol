@@ -123,25 +123,25 @@ contract IPoolStub is IPool, ERC20Permit {
     }
 
     function sellBasePreview(uint128 baseIn) public view override returns (uint128) {
-        require(baseIn > 0, "Can't quote 0 baseIn");
+        require(baseIn > 0, "sellBasePreview: Can't quote 0 baseIn");
         require(maxBaseIn() >= baseIn, "Not enough liquidity");
         return sellBasePreviewUnsafe(baseIn);
     }
 
     function buyBasePreview(uint128 baseOut) public view override returns (uint128) {
-        require(baseOut > 0, "Can't quote 0 baseOut");
+        require(baseOut > 0, "buyBasePreview: Can't quote 0 baseOut");
         require(maxBaseOut() >= baseOut, "Not enough liquidity");
         return uint128((baseOut * 10 ** decimals) / bid);
     }
 
     function sellFYTokenPreview(uint128 fyTokenIn) public view override returns (uint128) {
-        require(fyTokenIn > 0, "Can't quote 0 fyTokenIn");
+        require(fyTokenIn > 0, "sellFYTokenPreview: Can't quote 0 fyTokenIn");
         require(maxFYTokenIn() >= fyTokenIn, "Not enough liquidity");
         return sellFYTokenPreviewUnsafe(fyTokenIn);
     }
 
     function buyFYTokenPreview(uint128 fyTokenOut) public view override returns (uint128) {
-        require(fyTokenOut > 0, "Can't quote 0 fyTokenOut");
+        require(fyTokenOut > 0, "buyFYTokenPreview: Can't quote 0 fyTokenOut");
         require(maxFYTokenOut() >= fyTokenOut, "Not enough liquidity");
         return uint128((fyTokenOut * ask) / 10 ** decimals);
     }

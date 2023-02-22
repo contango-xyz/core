@@ -7,8 +7,6 @@ import "forge-std/Test.sol";
 import "src/batchable/PermitForwarder.sol";
 
 contract PermitForwarderTest is Test {
-    event TokenTrusted(address indexed token, bool trusted);
-
     Utilities private utils;
     address private trader;
 
@@ -19,18 +17,6 @@ contract PermitForwarderTest is Test {
         trader = utils.getNextUserAddress();
 
         sut = new Foo();
-    }
-
-    function testAddTrustedToken() public {
-        address token = utils.getNextUserAddress("token");
-
-        vm.expectEmit(true, true, true, true);
-        emit TokenTrusted(token, true);
-        sut.setTrustedToken(token, true);
-
-        vm.expectEmit(true, true, true, true);
-        emit TokenTrusted(token, false);
-        sut.setTrustedToken(token, false);
     }
 
     function testForwardPermitToUntrustedToken() public {

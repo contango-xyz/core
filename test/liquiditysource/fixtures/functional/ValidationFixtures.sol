@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 import "@yield-protocol/utils-v2/contracts/utils/RevertMsgExtractor.sol";
 
 import "src/libraries/DataTypes.sol";
-import "src/libraries/ErrorLib.sol";
+import "src/libraries/Errors.sol";
 import "src/liquiditysource/SlippageLib.sol";
 import "src/liquiditysource/UniswapV3Handler.sol";
 
@@ -16,9 +16,6 @@ import "../PositionFixtures.sol";
 abstract contract ValidationFixtures is PositionFixtures {
     using SafeCast for int256;
     using SignedMath for int256;
-
-    event ClosingOnlySet(bool closingOnly);
-    event ClosingOnlySet(Symbol symbol, bool closingOnly);
 
     function _expectUndercollateralisedRevert() internal virtual;
 
@@ -41,10 +38,10 @@ abstract contract ValidationFixtures is PositionFixtures {
 
     function testCanNotCreatePositionInstrumentExpired() public {
         // given
-        uint256 warpTimestamp = instrument.maturity + 1;
+        uint256 warpTimestamp = maturity + 1;
 
         // expect
-        vm.expectRevert(abi.encodeWithSelector(InstrumentExpired.selector, symbol, instrument.maturity, warpTimestamp));
+        vm.expectRevert(abi.encodeWithSelector(InstrumentExpired.selector, symbol, maturity, warpTimestamp));
 
         // when
         vm.warp(warpTimestamp);
@@ -83,13 +80,11 @@ abstract contract ValidationFixtures is PositionFixtures {
 
     function testCanNotIncreaseExpiredPosition() public {
         // given
-        uint256 warpTimestamp = instrument.maturity + 1;
+        uint256 warpTimestamp = maturity + 1;
         (PositionId positionId,) = _openPosition(1 ether);
 
         // expect
-        vm.expectRevert(
-            abi.encodeWithSelector(PositionExpired.selector, positionId, instrument.maturity, warpTimestamp)
-        );
+        vm.expectRevert(abi.encodeWithSelector(PositionExpired.selector, positionId, maturity, warpTimestamp));
 
         // when
         vm.warp(warpTimestamp);
@@ -127,13 +122,11 @@ abstract contract ValidationFixtures is PositionFixtures {
 
     function testCanNotDecreaseExpiredPosition() public {
         // given
-        uint256 warpTimestamp = instrument.maturity + 1;
+        uint256 warpTimestamp = maturity + 1;
         (PositionId positionId,) = _openPosition(1 ether);
 
         // expect
-        vm.expectRevert(
-            abi.encodeWithSelector(PositionExpired.selector, positionId, instrument.maturity, warpTimestamp)
-        );
+        vm.expectRevert(abi.encodeWithSelector(PositionExpired.selector, positionId, maturity, warpTimestamp));
 
         // when
         vm.warp(warpTimestamp);
@@ -175,13 +168,11 @@ abstract contract ValidationFixtures is PositionFixtures {
 
     function testCanNotAddCollateralToExpiredPosition() public {
         // given
-        uint256 warpTimestamp = instrument.maturity + 1;
+        uint256 warpTimestamp = maturity + 1;
         (PositionId positionId,) = _openPosition(1 ether);
 
         // expect
-        vm.expectRevert(
-            abi.encodeWithSelector(PositionExpired.selector, positionId, instrument.maturity, warpTimestamp)
-        );
+        vm.expectRevert(abi.encodeWithSelector(PositionExpired.selector, positionId, maturity, warpTimestamp));
 
         // when
         vm.warp(warpTimestamp);
@@ -203,13 +194,11 @@ abstract contract ValidationFixtures is PositionFixtures {
 
     function testCanNotRemoveCollateralFromExpiredPosition() public {
         // given
-        uint256 warpTimestamp = instrument.maturity + 1;
+        uint256 warpTimestamp = maturity + 1;
         (PositionId positionId,) = _openPosition(1 ether);
 
         // expect
-        vm.expectRevert(
-            abi.encodeWithSelector(PositionExpired.selector, positionId, instrument.maturity, warpTimestamp)
-        );
+        vm.expectRevert(abi.encodeWithSelector(PositionExpired.selector, positionId, maturity, warpTimestamp));
 
         // when
         vm.warp(warpTimestamp);
@@ -307,28 +296,29 @@ abstract contract ValidationFixtures is PositionFixtures {
 
     function testCanNotGetModifyCostForExpiredPosition() public {
         // given
-        uint256 warpTimestamp = instrument.maturity + 1;
+        uint256 warpTimestamp = maturity + 1;
         (PositionId positionId,) = _openPosition(1 ether);
 
         // when
         vm.warp(warpTimestamp);
         (bool success, bytes memory data) = address(contangoQuoter).call(
             abi.encodeWithSelector(
-                contangoQuoter.modifyCostForPosition.selector,
-                ModifyCostParams(positionId, -1, 0, collateralSlippage, uniswapFee)
+                contangoQuoter.modifyCostForPositionWithCollateral.selector,
+                ModifyCostParams(positionId, -1, collateralSlippage, uniswapFee),
+                0
             )
         );
         assertFalse(success);
-        assertEq(data, abi.encodeWithSelector(PositionExpired.selector, positionId, instrument.maturity, warpTimestamp));
+        assertEq(data, abi.encodeWithSelector(PositionExpired.selector, positionId, maturity, warpTimestamp));
     }
 
     function testCanNotGetDeliveryCostForActivePosition() public {
         // given
-        uint256 warpTimestamp = instrument.maturity - 1;
+        uint256 warpTimestamp = maturity - 1;
         (PositionId positionId,) = _openPosition(1 ether);
 
         // expect
-        vm.expectRevert(abi.encodeWithSelector(PositionActive.selector, positionId, instrument.maturity, warpTimestamp));
+        vm.expectRevert(abi.encodeWithSelector(PositionActive.selector, positionId, maturity, warpTimestamp));
 
         // when
         vm.warp(warpTimestamp);
@@ -432,7 +422,7 @@ abstract contract ValidationFixtures is PositionFixtures {
         contango.setTrustedToken(token, true);
     }
 
-    function testBalancelessPermission(address token, address payable to, uint256 amount) public {
+    function testBalancelessPermission(ERC20 token, address payable to, uint256 amount) public {
         vm.expectRevert(
             abi.encodePacked(
                 "AccessControl: account ",
@@ -487,12 +477,12 @@ abstract contract ValidationFixtures is PositionFixtures {
         vm.prank(contangoMultisig);
         contango.setClosingOnly(true);
 
-        vm.expectRevert(abi.encodeWithSelector(ClosingOnly.selector));
-        contangoQuoter.openingCostForPosition(
-            OpeningCostParams(symbol, 1 ether, 2_000e6, collateralSlippage, uniswapFee)
+        vm.expectRevert(ClosingOnly.selector);
+        contangoQuoter.openingCostForPositionWithCollateral(
+            OpeningCostParams(symbol, 1 ether, collateralSlippage, uniswapFee), 2_000e6
         );
 
-        vm.expectRevert(abi.encodeWithSelector(ClosingOnly.selector));
+        vm.expectRevert(ClosingOnly.selector);
         vm.prank(trader);
         contango.createPosition(symbol, trader, 1 ether, type(uint256).max, 2_000e6, trader, 0, uniswapFee);
 
@@ -502,8 +492,8 @@ abstract contract ValidationFixtures is PositionFixtures {
         vm.prank(contangoMultisig);
         contango.setClosingOnly(false);
 
-        contangoQuoter.openingCostForPosition(
-            OpeningCostParams(symbol, 1 ether, 2_000e6, collateralSlippage, uniswapFee)
+        contangoQuoter.openingCostForPositionWithCollateral(
+            OpeningCostParams(symbol, 1 ether, collateralSlippage, uniswapFee), 2_000e6
         );
 
         (PositionId positionId,) = _openPosition(1 ether);
@@ -524,12 +514,12 @@ abstract contract ValidationFixtures is PositionFixtures {
         vm.prank(contangoMultisig);
         contango.setClosingOnly(true);
 
-        vm.expectRevert(abi.encodeWithSelector(ClosingOnly.selector));
-        contangoQuoter.modifyCostForPosition(
-            ModifyCostParams(positionId, increaseQuantity, increaseCollateral, collateralSlippage, uniswapFee)
+        vm.expectRevert(ClosingOnly.selector);
+        contangoQuoter.modifyCostForPositionWithCollateral(
+            ModifyCostParams(positionId, increaseQuantity, collateralSlippage, uniswapFee), increaseCollateral
         );
 
-        vm.expectRevert(abi.encodeWithSelector(ClosingOnly.selector));
+        vm.expectRevert(ClosingOnly.selector);
         vm.prank(trader);
         contango.modifyPosition(
             positionId, increaseQuantity, type(uint256).max, increaseCollateral, trader, 0, uniswapFee
@@ -541,8 +531,8 @@ abstract contract ValidationFixtures is PositionFixtures {
         vm.prank(contangoMultisig);
         contango.setClosingOnly(false);
 
-        contangoQuoter.modifyCostForPosition(
-            ModifyCostParams(positionId, increaseQuantity, increaseCollateral, collateralSlippage, uniswapFee)
+        contangoQuoter.modifyCostForPositionWithCollateral(
+            ModifyCostParams(positionId, increaseQuantity, collateralSlippage, uniswapFee), increaseCollateral
         );
 
         vm.prank(trader);
@@ -554,29 +544,29 @@ abstract contract ValidationFixtures is PositionFixtures {
     }
 
     function testCanCreatePositionAfterInstrumentClosingOnlyIsReverted() public {
-        // closingOnly = true
-        vm.expectEmit(true, true, true, true);
-        emit ClosingOnlySet(symbol, true);
+        bool closingOnly = true;
+        vm.expectEmit(true, false, false, true);
+        emit ClosingOnlySet(symbol, closingOnly);
         vm.prank(contangoMultisig);
-        contango.setClosingOnly(symbol, true);
+        contango.setClosingOnly(symbol, closingOnly);
 
         vm.expectRevert(abi.encodeWithSelector(InstrumentClosingOnly.selector, symbol));
-        contangoQuoter.openingCostForPosition(
-            OpeningCostParams(symbol, 1 ether, 2_000e6, collateralSlippage, uniswapFee)
+        contangoQuoter.openingCostForPositionWithCollateral(
+            OpeningCostParams(symbol, 1 ether, collateralSlippage, uniswapFee), 2_000e6
         );
 
         vm.expectRevert(abi.encodeWithSelector(InstrumentClosingOnly.selector, symbol));
         vm.prank(trader);
         contango.createPosition(symbol, trader, 1 ether, type(uint256).max, 2_000e6, trader, 0, uniswapFee);
 
-        // closingOnly = false
+        closingOnly = false;
         vm.expectEmit(true, true, true, true);
-        emit ClosingOnlySet(symbol, false);
+        emit ClosingOnlySet(symbol, closingOnly);
         vm.prank(contangoMultisig);
-        contango.setClosingOnly(symbol, false);
+        contango.setClosingOnly(symbol, closingOnly);
 
-        contangoQuoter.openingCostForPosition(
-            OpeningCostParams(symbol, 1 ether, 2_000e6, collateralSlippage, uniswapFee)
+        contangoQuoter.openingCostForPositionWithCollateral(
+            OpeningCostParams(symbol, 1 ether, collateralSlippage, uniswapFee), 2_000e6
         );
 
         (PositionId positionId,) = _openPosition(1 ether);
@@ -598,8 +588,8 @@ abstract contract ValidationFixtures is PositionFixtures {
         contango.setClosingOnly(symbol, true);
 
         vm.expectRevert(abi.encodeWithSelector(InstrumentClosingOnly.selector, symbol));
-        contangoQuoter.modifyCostForPosition(
-            ModifyCostParams(positionId, increaseQuantity, increaseCollateral, collateralSlippage, uniswapFee)
+        contangoQuoter.modifyCostForPositionWithCollateral(
+            ModifyCostParams(positionId, increaseQuantity, collateralSlippage, uniswapFee), increaseCollateral
         );
 
         vm.expectRevert(abi.encodeWithSelector(InstrumentClosingOnly.selector, symbol));
@@ -614,8 +604,8 @@ abstract contract ValidationFixtures is PositionFixtures {
         vm.prank(contangoMultisig);
         contango.setClosingOnly(symbol, false);
 
-        contangoQuoter.modifyCostForPosition(
-            ModifyCostParams(positionId, increaseQuantity, increaseCollateral, collateralSlippage, uniswapFee)
+        contangoQuoter.modifyCostForPositionWithCollateral(
+            ModifyCostParams(positionId, increaseQuantity, collateralSlippage, uniswapFee), increaseCollateral
         );
 
         vm.prank(trader);
@@ -626,27 +616,11 @@ abstract contract ValidationFixtures is PositionFixtures {
         assertEq(contango.position(positionId).openQuantity, 2 ether);
     }
 
-    function testFunctionNotFoundError() public {
-        bool callResult;
-        bytes4 sig = bytes4(keccak256("invalid()"));
-
-        // low-level call results are flipped by foundry
-        // https://book.getfoundry.sh/cheatcodes/expect-revert.html?highlight=expectRevert#expectrevert
-
-        vm.expectRevert(abi.encodeWithSelector(FunctionNotFound.selector, sig));
-        (callResult,) = address(contango).call(abi.encode(sig));
-        assertTrue(callResult, "expectRevert: call did not revert");
-
-        vm.expectRevert(abi.encodeWithSelector(FunctionNotFound.selector, sig));
-        (callResult,) = address(contangoQuoter).call(abi.encode(sig));
-        assertTrue(callResult, "expectRevert: call did not revert");
-    }
-
     function testCanNotCreatePositionSlippageExceeded() public {
         // given
         uint256 quantity = 1 ether;
-        ModifyCostResult memory result = contangoQuoter.openingCostForPosition(
-            OpeningCostParams(symbol, quantity, 0, collateralSlippage, uniswapFee)
+        ModifyCostResult memory result = contangoQuoter.openingCostForPositionWithCollateral(
+            OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee), 0
         );
         dealAndApprove(address(quote), trader, result.minCollateral.toUint256(), address(contango));
 
@@ -678,8 +652,8 @@ abstract contract ValidationFixtures is PositionFixtures {
         (PositionId positionId,) = _openPosition(1 ether);
 
         int256 increaseQuantity = 1 ether;
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(
-            ModifyCostParams(positionId, increaseQuantity, 0, collateralSlippage, uniswapFee)
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(
+            ModifyCostParams(positionId, increaseQuantity, collateralSlippage, uniswapFee), 0
         );
         dealAndApprove(address(quote), trader, result.minCollateral.toUint256(), address(contango));
 
@@ -711,8 +685,8 @@ abstract contract ValidationFixtures is PositionFixtures {
         (PositionId positionId,) = _openPosition(2 ether);
 
         int256 decreaseQuantity = -1 ether;
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(
-            ModifyCostParams(positionId, decreaseQuantity, 0, collateralSlippage, uniswapFee)
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(
+            ModifyCostParams(positionId, decreaseQuantity, collateralSlippage, uniswapFee), 0
         );
 
         uint256 insufficientLimitCost = result.cost.abs() + 1e6;
@@ -739,14 +713,14 @@ abstract contract ValidationFixtures is PositionFixtures {
         // given
         (PositionId positionId,) = _openPosition(2 ether);
 
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(
             ModifyCostParams({
                 positionId: positionId,
                 quantity: 0,
-                collateral: 1_000e6,
                 collateralSlippage: collateralSlippage,
                 uniswapFee: uniswapFee
-            })
+            }),
+            1_000e6
         );
         dealAndApprove(address(quote), trader, uint256(result.collateralUsed), address(contango));
 
@@ -770,14 +744,14 @@ abstract contract ValidationFixtures is PositionFixtures {
         // given
         (PositionId positionId,) = _openPosition(4 ether);
         uint256 collateralToRemove = 100e6;
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(
             ModifyCostParams({
                 positionId: positionId,
                 quantity: 0,
-                collateral: -int256(collateralToRemove),
                 collateralSlippage: collateralSlippage,
                 uniswapFee: uniswapFee
-            })
+            }),
+            -int256(collateralToRemove)
         );
 
         uint256 insufficientSlippageTolerance = result.debtDelta.abs() - 1e6;
@@ -827,13 +801,13 @@ abstract contract ValidationFixtures is PositionFixtures {
         UniswapV3Handler.Callback memory callback;
         callback.instrument.base = base;
         callback.instrument.quote = quote;
-        callback.instrument.uniswapFeeTransient = instrument.uniswapFeeTransient;
+        callback.info.uniswapFee = 500;
 
         // expect
-        vm.expectRevert(abi.encodeWithSelector(UniswapV3Handler.InvalidCallbackCaller.selector, trader));
+        vm.expectRevert(abi.encodeWithSelector(UniswapV3Handler.InvalidCallbackCaller.selector, address(this)));
 
         // when
-        vm.prank(trader);
+        vm.prank(address(this));
         contango.uniswapV3SwapCallback({amount0Delta: 0, amount1Delta: 0, data: abi.encode(callback)});
     }
 
@@ -842,13 +816,12 @@ abstract contract ValidationFixtures is PositionFixtures {
         UniswapV3Handler.Callback memory callback;
         callback.instrument.base = base;
         callback.instrument.quote = quote;
-        callback.instrument.uniswapFeeTransient = instrument.uniswapFeeTransient;
+        callback.info.uniswapFee = 500;
 
         callback.fill.hedgeSize = 1 ether;
 
         address pool = PoolAddress.computeAddress(
-            uniswapAddresses.UNISWAP_FACTORY,
-            PoolAddress.getPoolKey(address(base), address(quote), instrument.uniswapFeeTransient)
+            uniswapAddresses.UNISWAP_FACTORY, PoolAddress.getPoolKey(address(base), address(quote), 500)
         );
 
         // expect

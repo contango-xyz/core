@@ -1,10 +1,95 @@
 //SPDX-License-Identifier: MIT
-pragma solidity 0.8.17;
+pragma solidity ^0.8.4;
 
 import "./IContangoView.sol";
 
+uint256 constant MIN_DEBT_MULTIPLIER = 5;
+
+interface IContangoEvents {
+    /// @dev due to solidity technical limitations, the actual events are declared again where they are emitted, e.g. ExecutionProcessorLib
+
+    event PositionUpserted(
+        Symbol indexed symbol,
+        address indexed trader,
+        PositionId indexed positionId,
+        uint256 openQuantity,
+        uint256 openCost,
+        int256 collateral,
+        uint256 totalFees,
+        uint256 txFees,
+        int256 realisedPnL
+    );
+
+    event PositionLiquidated(
+        Symbol indexed symbol,
+        address indexed trader,
+        PositionId indexed positionId,
+        uint256 openQuantity,
+        uint256 openCost,
+        int256 collateral,
+        int256 realisedPnL
+    );
+
+    event PositionClosed(
+        Symbol indexed symbol,
+        address indexed trader,
+        PositionId indexed positionId,
+        uint256 closedQuantity,
+        uint256 closedCost,
+        int256 collateral,
+        uint256 totalFees,
+        uint256 txFees,
+        int256 realisedPnL
+    );
+
+    event PositionDelivered(
+        Symbol indexed symbol,
+        address indexed trader,
+        PositionId indexed positionId,
+        address to,
+        uint256 deliveredQuantity,
+        uint256 deliveryCost,
+        uint256 totalFees
+    );
+
+    event ContractBought(
+        Symbol indexed symbol,
+        address indexed trader,
+        PositionId indexed positionId,
+        uint256 size,
+        uint256 cost,
+        uint256 hedgeSize,
+        uint256 hedgeCost,
+        int256 collateral
+    );
+    event ContractSold(
+        Symbol indexed symbol,
+        address indexed trader,
+        PositionId indexed positionId,
+        uint256 size,
+        uint256 cost,
+        uint256 hedgeSize,
+        uint256 hedgeCost,
+        int256 collateral
+    );
+
+    event CollateralAdded(
+        Symbol indexed symbol, address indexed trader, PositionId indexed positionId, uint256 amount, uint256 cost
+    );
+    event CollateralRemoved(
+        Symbol indexed symbol, address indexed trader, PositionId indexed positionId, uint256 amount, uint256 cost
+    );
+}
+
 /// @title Interface to allow for position management
-interface IContango is IContangoView {
+interface IContango is IContangoView, IContangoEvents {
+    // ====================================== Errors ======================================
+
+    /// @dev when opening/modifying position, if resulting cost is less than min debt * MIN_DEBT_MULTIPLIER
+    error PositionIsTooSmall(uint256 openCost, uint256 minCost);
+
+    // ====================================== Functions ======================================
+
     /// @notice Creates a new position in the system by performing a trade of `quantity` at `limitCost` with `collateral`
     /// @param symbol Symbol of the instrument to be traded
     /// @param trader Which address will own the position

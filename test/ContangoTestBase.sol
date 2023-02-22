@@ -10,6 +10,8 @@ import "forge-std/Test.sol";
 import "solmate/src/tokens/WETH.sol";
 
 import "src/libraries/DataTypes.sol";
+import "src/interfaces/IContango.sol";
+import "src/interfaces/IContangoAdmin.sol";
 import "src/interfaces/IContangoView.sol";
 import "src/interfaces/IContangoQuoter.sol";
 import "src/liquiditysource/ContangoBase.sol";
@@ -27,9 +29,7 @@ library uniswapAddresses {
 }
 
 // solhint-disable max-states-count, var-name-mixedcase
-abstract contract ContangoTestBase is Test {
-    event ContractTraded(PositionId indexed positionId, Fill fill);
-
+abstract contract ContangoTestBase is Test, IContangoEvents, IContangoAdminEvents {
     uint256 public constant HIGH_LIQUIDITY = type(uint128).max;
 
     address payable internal trader = payable(address(0xb0b));
@@ -39,6 +39,7 @@ abstract contract ContangoTestBase is Test {
     ERC20 internal USDC;
     ERC20 internal WBTC;
     WETH internal WETH9;
+    ERC20 internal CUSDC;
 
     mapping(ERC20 => address) internal chainlinkUsdOracles;
 
@@ -50,6 +51,7 @@ abstract contract ContangoTestBase is Test {
 
     ERC20 internal base;
     ERC20 internal quote;
+    uint256 maturity;
 
     uint256 internal blockNo;
     string internal chain;
@@ -103,5 +105,11 @@ abstract contract ContangoTestBase is Test {
         vm.prank(who);
         (bool success,) = sink.call{value: who.balance}("");
         assertEq(success, true);
+    }
+
+    modifier withinSnapshot() {
+        uint256 snapshotId = vm.snapshot();
+        _;
+        vm.revertTo(snapshotId);
     }
 }

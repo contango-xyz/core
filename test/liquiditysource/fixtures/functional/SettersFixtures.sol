@@ -7,9 +7,6 @@ import "../PositionFixtures.sol";
 abstract contract SettersFixtures is PositionFixtures {
     using SignedMath for int256;
 
-    event FeeModelUpdated(Symbol indexed symbol, IFeeModel feeModel);
-    event UniswapFeeUpdated(Symbol indexed symbol, uint24 uniswapFee);
-
     function testSetFeeModel() public {
         IFeeModel newFeeModel = IFeeModel(address(0xfee));
 
@@ -29,5 +26,19 @@ abstract contract SettersFixtures is PositionFixtures {
         vm.prank(contangoMultisig);
         contango.unpause();
         assertFalse(contango.paused());
+    }
+
+    function testAddTrustedToken() public {
+        address token = utils.getNextUserAddress("token");
+
+        vm.expectEmit(true, true, true, true);
+        emit TokenTrusted(token, true);
+        vm.prank(contangoTimelock);
+        contango.setTrustedToken(token, true);
+
+        vm.expectEmit(true, true, true, true);
+        emit TokenTrusted(token, false);
+        vm.prank(contangoTimelock);
+        contango.setTrustedToken(token, false);
     }
 }

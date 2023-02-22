@@ -11,14 +11,16 @@ import {ICauldron} from "@yield-protocol/vault-v2/contracts/interfaces/ICauldron
 import {IOracle} from "@yield-protocol/vault-v2/contracts/interfaces/IOracle.sol";
 import {IWitch} from "@yield-protocol/vault-v2/contracts/interfaces/IWitch.sol";
 import {IContangoLadle} from "@yield-protocol/vault-v2/contracts/other/contango/interfaces/IContangoLadle.sol";
+import {CompositeMultiOracle} from "@yield-protocol/vault-v2/contracts/oracles/composite/CompositeMultiOracle.sol";
 
+import "src/liquiditysource/yield-protocol/interfaces/IContangoYieldAdmin.sol";
 import "src/liquiditysource/yield-protocol/ContangoYield.sol";
 import "src/liquiditysource/yield-protocol/ContangoYieldQuoter.sol";
 import "./constants.sol";
 import "../../ContangoTest.sol";
 
 // solhint-disable-next-line max-states-count
-abstract contract WithYieldProtocol is ContangoTest {
+abstract contract WithYieldProtocol is ContangoTest, IContangoYieldAdminEvents {
     using stdStorage for StdStorage;
 
     ContangoYield internal contangoYield;
@@ -27,6 +29,7 @@ abstract contract WithYieldProtocol is ContangoTest {
     IContangoLadle internal ladle;
     ICauldron internal cauldron;
     IPoolOracle internal poolOracle;
+    CompositeMultiOracle internal compositeOracle;
 
     address internal yieldTimelock;
 
@@ -70,8 +73,4 @@ abstract contract WithYieldProtocol is ContangoTest {
 
 interface ICauldronExt {
     function setDebtLimits(bytes6 baseId, bytes6 ilkId, uint96 max, uint24 min, uint8 dec) external;
-}
-
-interface ICompositeMultiOracle {
-    function setSource(bytes6 baseId, bytes6 quoteId, IOracle source) external;
 }

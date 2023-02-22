@@ -3,19 +3,25 @@ pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/utils/math/SignedMath.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
+import "./interfaces/IContango.sol";
 import "./interfaces/IFeeModel.sol";
 import "./libraries/CodecLib.sol";
+import "./libraries/ConfigStorageLib.sol";
 import "./libraries/StorageLib.sol";
 import "./libraries/TransferLib.sol";
 
 /// @dev This set of methods process the result of an execution, update the internal accounting and transfer funds if required
 library ExecutionProcessorLib {
-    using SafeCast for uint256;
+    using SafeCast for *;
     using Math for uint256;
     using SignedMath for int256;
     using TransferLib for ERC20;
     using CodecLib for uint256;
+
+    /// @dev IMPORTANT - make sure the events here are the same as in IContangoEvents
+    /// this is needed because we're in a library and can't re-use events from an interface
 
     event PositionUpserted(
         Symbol indexed symbol,
@@ -61,11 +67,6 @@ library ExecutionProcessorLib {
         uint256 totalFees
     );
 
-    error Undercollateralised(PositionId positionId);
-    error PositionIsTooSmall(uint256 openCost, uint256 minCost);
-
-    uint256 public constant MIN_DEBT_MULTIPLIER = 5;
-
     function deliverPosition(
         Symbol symbol,
         PositionId positionId,
@@ -96,7 +97,7 @@ library ExecutionProcessorLib {
         (int256 collateral, uint256 protocolFees, uint256 fee) =
             _applyFees(trader, symbol, positionId, cost.abs() + amount.abs());
 
-        openCost = uint256(int256(openCost) + cost);
+        openCost = (openCost.toInt256() + cost).toUint256();
         collateral = collateral + amount;
 
         _updatePosition(symbol, positionId, trader, openQuantity, openCost, collateral, protocolFees, fee, 0);
@@ -121,7 +122,7 @@ library ExecutionProcessorLib {
         // For a new position
         if (openQuantity == 0) {
             fee = _fee(trader, symbol, positionId, cost);
-            positionCollateral = collateralDelta - int256(fee);
+            positionCollateral = collateralDelta - fee.toInt256();
             protocolFees = fee;
         } else {
             (positionCollateral, protocolFees, fee) = _applyFees(trader, symbol, positionId, cost);
@@ -158,7 +159,7 @@ library ExecutionProcessorLib {
         {
             // Proportion of the openCost based on the size of the fill respective of the overall position size
             uint256 closedCost = (size * openCost).ceilDiv(openQuantity);
-            pnl = int256(cost) - int256(closedCost);
+            pnl = cost.toInt256() - closedCost.toInt256();
             openCost = openCost - closedCost;
             _validateMinCost(openCost, minCost);
             openQuantity = openQuantity - size;
@@ -187,7 +188,7 @@ library ExecutionProcessorLib {
         (uint256 openQuantity, uint256 openCost) = notionals[positionId].decodeU128();
         (int256 collateral, uint256 protocolFees, uint256 fee) = _applyFees(trader, symbol, positionId, cost);
 
-        int256 pnl = int256(cost) - int256(openCost);
+        int256 pnl = cost.toInt256() - openCost.toInt256();
 
         // Crystallised PnL is accounted on the collateral
         collateral = collateral + pnl;
@@ -215,7 +216,7 @@ library ExecutionProcessorLib {
 
         // Proportion of the openCost based on the size of the fill respective of the overall position size
         uint256 closedCost = size == openQuantity ? openCost : (size * openCost).ceilDiv(openQuantity);
-        int256 pnl = int256(cost) - int256(closedCost);
+        int256 pnl = cost.toInt256() - closedCost.toInt256();
         openCost = openCost - closedCost;
         openQuantity = openQuantity - size;
 
@@ -236,10 +237,10 @@ library ExecutionProcessorLib {
     {
         int256 iProtocolFees;
         (collateral, iProtocolFees) = StorageLib.getPositionBalances()[positionId].decodeI128();
-        protocolFees = uint256(iProtocolFees);
+        protocolFees = iProtocolFees.toUint256();
         fee = _fee(trader, symbol, positionId, cost);
         if (fee > 0) {
-            collateral = collateral - int256(fee);
+            collateral = collateral - fee.toInt256();
             protocolFees = protocolFees + fee;
         }
     }
@@ -261,13 +262,13 @@ library ExecutionProcessorLib {
         int256 pnl
     ) private {
         StorageLib.getPositionNotionals()[positionId] = CodecLib.encodeU128(openQuantity, openCost);
-        StorageLib.getPositionBalances()[positionId] = CodecLib.encodeI128(collateral, int256(protocolFees));
+        StorageLib.getPositionBalances()[positionId] = CodecLib.encodeI128(collateral, protocolFees.toInt256());
         emit PositionUpserted(symbol, trader, positionId, openQuantity, openCost, collateral, protocolFees, fee, pnl);
     }
 
     function _validateMinCost(uint256 openCost, uint256 minCost) private pure {
         if (openCost < minCost * MIN_DEBT_MULTIPLIER) {
-            revert PositionIsTooSmall(openCost, minCost * MIN_DEBT_MULTIPLIER);
+            revert IContango.PositionIsTooSmall(openCost, minCost * MIN_DEBT_MULTIPLIER);
         }
     }
 }

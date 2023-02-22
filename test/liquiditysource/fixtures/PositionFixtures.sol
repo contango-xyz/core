@@ -25,11 +25,13 @@ abstract contract PositionFixtures is ContangoTestBase {
         uint256 lending;
     }
 
-    Instrument internal instrument;
+    Vm.Log[] internal recordedLogs;
+
     uint24 uniswapFee = 3000;
 
     uint256 internal quoteDecimals;
     uint256 internal baseDecimals;
+    uint256 internal maxBaseDust;
     uint256 internal maxQuoteDust;
 
     Symbol internal symbol;
@@ -80,8 +82,8 @@ abstract contract PositionFixtures is ContangoTestBase {
         internal
         returns (PositionId positionId, ModifyCostResult memory result)
     {
-        ModifyCostResult memory initialQuote = contangoQuoter.openingCostForPosition(
-            OpeningCostParams(symbol, quantity, 0, collateralSlippage, uniswapFee)
+        ModifyCostResult memory initialQuote = contangoQuoter.openingCostForPositionWithCollateral(
+            OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee), 0
         );
 
         // 10% over min
@@ -95,12 +97,23 @@ abstract contract PositionFixtures is ContangoTestBase {
         return _openPosition(trader, quantity, collateral);
     }
 
+    function _openPositionAtLeverage(uint256 quantity, uint256 leverage)
+        internal
+        returns (PositionId, ModifyCostResult memory)
+    {
+        ModifyCostResult memory _quote = contangoQuoter.openingCostForPositionWithLeverage(
+            OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee), leverage
+        );
+
+        return _openPosition(trader, quantity, _quote.collateralUsed.toUint256());
+    }
+
     function _openPosition(address owner, uint256 quantity, uint256 collateral)
         internal
         returns (PositionId positionId, ModifyCostResult memory result)
     {
-        result = contangoQuoter.openingCostForPosition(
-            OpeningCostParams(symbol, quantity, collateral, collateralSlippage, uniswapFee)
+        result = contangoQuoter.openingCostForPositionWithCollateral(
+            OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee), collateral
         );
         require(!result.insufficientLiquidity, "insufficientLiquidity");
 
@@ -124,7 +137,7 @@ abstract contract PositionFixtures is ContangoTestBase {
                 "position.collateral"
             );
 
-            Vm.Log memory _log = vm.getRecordedLogs().first(
+            Vm.Log memory _log = _updateRecordedLogs().first(
                 "PositionUpserted(bytes32,address,uint256,uint256,uint256,int256,uint256,uint256,int256)"
             );
             assertEq(_log.topics[1], Symbol.unwrap(symbol));
@@ -216,8 +229,8 @@ abstract contract PositionFixtures is ContangoTestBase {
         Position memory position = contango.position(positionId);
         int256 closeQty = -int256(position.openQuantity);
 
-        result = contangoQuoter.modifyCostForPosition(
-            ModifyCostParams(positionId, closeQty, 0, collateralSlippage, uniswapFee)
+        result = contangoQuoter.modifyCostForPositionWithCollateral(
+            ModifyCostParams(positionId, closeQty, collateralSlippage, uniswapFee), 0
         );
         require(!result.insufficientLiquidity, "insufficientLiquidity");
 
@@ -226,7 +239,7 @@ abstract contract PositionFixtures is ContangoTestBase {
 
         assertPositionWasClosed(positionId);
 
-        Vm.Log memory _log = vm.getRecordedLogs().first(
+        Vm.Log memory _log = _updateRecordedLogs().first(
             "PositionClosed(bytes32,address,uint256,uint256,uint256,int256,uint256,uint256,int256)"
         );
         assertEq(_log.topics[1], Symbol.unwrap(symbol));
@@ -270,8 +283,8 @@ abstract contract PositionFixtures is ContangoTestBase {
         uint256 treasuryBalance = quote.balanceOf(treasury);
 
         Position memory position = contango.position(positionId);
-        result = contangoQuoter.modifyCostForPosition(
-            ModifyCostParams(positionId, quantity, collateral, collateralSlippage, uniswapFee)
+        result = contangoQuoter.modifyCostForPositionWithCollateral(
+            ModifyCostParams(positionId, quantity, collateralSlippage, uniswapFee), collateral
         );
         require(!result.insufficientLiquidity, "insufficientLiquidity");
 
@@ -283,7 +296,7 @@ abstract contract PositionFixtures is ContangoTestBase {
         _modifyPosition(positionId, quantity, result);
 
         {
-            Vm.Log memory _log = vm.getRecordedLogs().first(
+            Vm.Log memory _log = _updateRecordedLogs().first(
                 "PositionUpserted(bytes32,address,uint256,uint256,uint256,int256,uint256,uint256,int256)"
             );
             assertEq(_log.topics[1], Symbol.unwrap(symbol));
@@ -416,14 +429,14 @@ abstract contract PositionFixtures is ContangoTestBase {
         uint256 treasuryBalance = quote.balanceOf(treasury);
         Position memory position = contango.position(positionId);
 
-        result = contangoQuoter.modifyCostForPosition(
+        result = contangoQuoter.modifyCostForPositionWithCollateral(
             ModifyCostParams({
                 positionId: positionId,
                 quantity: 0,
-                collateral: collateral,
                 collateralSlippage: collateralSlippage,
                 uniswapFee: uniswapFee
-            })
+            }),
+            collateral
         );
         require(!result.insufficientLiquidity, "insufficientLiquidity");
 
@@ -433,7 +446,7 @@ abstract contract PositionFixtures is ContangoTestBase {
         );
 
         {
-            Vm.Log memory _log = vm.getRecordedLogs().first(
+            Vm.Log memory _log = _updateRecordedLogs().first(
                 "PositionUpserted(bytes32,address,uint256,uint256,uint256,int256,uint256,uint256,int256)"
             );
             assertEq(_log.topics[1], Symbol.unwrap(symbol));
@@ -533,7 +546,7 @@ abstract contract PositionFixtures is ContangoTestBase {
         assertPositionWasClosedInternal(positionId);
 
         Vm.Log memory log =
-            vm.getRecordedLogs().first("PositionDelivered(bytes32,address,uint256,address,uint256,uint256,uint256)");
+            _updateRecordedLogs().first("PositionDelivered(bytes32,address,uint256,address,uint256,uint256,uint256)");
         assertEq(log.topics[1], Symbol.unwrap(symbol));
         assertEq(uint256(log.topics[2]), uint160(address(owner)));
         assertEq(uint256(log.topics[3]), PositionId.unwrap(positionId));
@@ -580,5 +593,26 @@ abstract contract PositionFixtures is ContangoTestBase {
         UnderlyingBalances memory underlyingBalances = _underlyingBalances(positionId);
         assertEqDecimal(underlyingBalances.borrowing, 0, quoteDecimals, "underlying borrowing");
         assertEqDecimal(underlyingBalances.lending, 0, baseDecimals, "underlying lending");
+    }
+
+    function _assertLeverage(ModifyCostResult memory result, uint256 expected, uint256 tolerance) internal {
+        return _assertLeverage(result.underlyingCollateral, result.underlyingDebt, expected, tolerance);
+    }
+
+    function _assertLeverage(uint256 underlyingCollateral, uint256 underlyingDebt, uint256 expected, uint256 tolerance)
+        internal
+    {
+        uint256 multiplier = 10 ** (quoteDecimals);
+        uint256 margin = (underlyingCollateral - underlyingDebt) * multiplier / underlyingCollateral;
+        uint256 leverage = 1e18 * multiplier / margin;
+        assertApproxEqAbsDecimal(leverage, expected, tolerance, 18, "leverage");
+    }
+
+    function _updateRecordedLogs() private returns (Vm.Log[] memory logs) {
+        delete recordedLogs;
+        logs = vm.getRecordedLogs();
+        for (uint256 i = 0; i < logs.length; i++) {
+            recordedLogs.push(logs[i]);
+        }
     }
 }
