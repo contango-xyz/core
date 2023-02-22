@@ -7,8 +7,6 @@ error ClosingOnly();
 
 error InstrumentClosingOnly(Symbol symbol);
 
-error FunctionNotFound(bytes4 sig);
-
 error InstrumentAlreadyExists(Symbol symbol);
 
 error InstrumentExpired(Symbol symbol, uint32 maturity, uint256 timestamp);
@@ -30,3 +28,7 @@ error PositionActive(PositionId positionId, uint32 maturity, uint256 timestamp);
 error PositionExpired(PositionId positionId, uint32 maturity, uint256 timestamp);
 
 error ViewOnly();
+
+error OnlyFromWETH(address sender);
+
+error InvalidSelector(bytes4 selector);

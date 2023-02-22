@@ -22,7 +22,7 @@ contract YieldMainnetPnLUSDCTest is
 
         // Move the market
         skip(4.5 days);
-        _update(yieldInstrument.basePool);
+        _update(instrument.basePool);
         skip(0.5 days);
         stubPrice({_base: WETH9, _quote: USDC, baseUsdPrice: 1500e6, quoteUsdPrice: 1e6, uniswapFee: uniswapFee});
 
@@ -35,7 +35,7 @@ contract YieldMainnetPnLUSDCTest is
 
         // Move the market
         skip(4.5 days);
-        _update(yieldInstrument.basePool);
+        _update(instrument.basePool);
         skip(0.5 days);
         stubPrice({_base: WETH9, _quote: USDC, baseUsdPrice: 960e6, quoteUsdPrice: 1e6, uniswapFee: uniswapFee});
 

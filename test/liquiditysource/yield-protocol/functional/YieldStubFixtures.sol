@@ -17,26 +17,26 @@ abstract contract YieldStubFixtures is WithYieldFixtures, RatesStubFixtures, Stu
     function setUp() public virtual override {
         super.setUp();
 
-        vm.etch(address(yieldInstrument.basePool), getCode(address(new IPoolStub(yieldInstrument.basePool))));
-        vm.etch(address(yieldInstrument.quotePool), getCode(address(new IPoolStub(yieldInstrument.quotePool))));
+        vm.etch(address(instrument.basePool), address(new IPoolStub(instrument.basePool)).code);
+        vm.etch(address(instrument.quotePool), address(new IPoolStub(instrument.quotePool)).code);
 
         _configureStubs();
     }
 
     function _stubBaseRates(uint256 bid, uint256 ask) internal override {
-        IPoolStub(address(yieldInstrument.basePool)).setBidAsk(bid.toUint128(), ask.toUint128());
+        IPoolStub(address(instrument.basePool)).setBidAsk(bid.toUint128(), ask.toUint128());
     }
 
     function _stubQuoteRates(uint256 bid, uint256 ask) internal override {
-        IPoolStub(address(yieldInstrument.quotePool)).setBidAsk(bid.toUint128(), ask.toUint128());
+        IPoolStub(address(instrument.quotePool)).setBidAsk(bid.toUint128(), ask.toUint128());
     }
 
     function _stubBaseLiquidity(uint256 borrow, uint256 lend) internal override {
-        _setPoolStubLiquidity(yieldInstrument.basePool, borrow, lend);
+        _setPoolStubLiquidity(instrument.basePool, borrow, lend);
     }
 
     function _stubQuoteLiquidity(uint256 borrow, uint256 lend) internal override {
-        _setPoolStubLiquidity(yieldInstrument.quotePool, borrow, lend);
+        _setPoolStubLiquidity(instrument.quotePool, borrow, lend);
     }
 }
 
@@ -51,15 +51,13 @@ abstract contract YieldStubETHUSDCFixtures is
 
         symbol = Symbol.wrap("yETHUSDC2212-2");
         vm.prank(contangoTimelock);
-        (instrument, yieldInstrument) =
-            contangoYield.createYieldInstrument(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
+        instrument = contangoYield.createYieldInstrumentV2(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
 
         vm.startPrank(yieldTimelock);
-        ICompositeMultiOracle compositeOracle = ICompositeMultiOracle(0x750B3a18115fe090Bc621F9E4B90bd442bcd02F2);
         compositeOracle.setSource(
             constants.FYETH2212,
             constants.ETH_ID,
-            new IOraclePoolStub(IPoolStub(address(yieldInstrument.basePool)), constants.FYETH2212)
+            new IOraclePoolStub(IPoolStub(address(instrument.basePool)), constants.FYETH2212)
         );
         vm.stopPrank();
     }

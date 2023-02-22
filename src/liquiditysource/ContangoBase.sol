@@ -13,13 +13,16 @@ import "../batchable/Batchable.sol";
 import "../batchable/PermitForwarder.sol";
 import "../batchable/WethHandler.sol";
 import "../interfaces/IContango.sol";
+import "../interfaces/IContangoAdmin.sol";
 import "../libraries/DataTypes.sol";
 import "../libraries/CodecLib.sol";
-import "../libraries/ErrorLib.sol";
+import "../libraries/Errors.sol";
+import "../libraries/StorageLib.sol";
 
 /// @notice Base contract that implements all common interfaces and function for all underlying implementations
 abstract contract ContangoBase is
     IContango,
+    IContangoAdmin,
     IUniswapV3SwapCallback,
     ReentrancyGuardUpgradeable,
     AccessControlUpgradeable,
@@ -47,7 +50,10 @@ abstract contract ContangoBase is
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         ConfigStorageLib.setTreasury(_treasury);
+        emit TreasurySet(_treasury);
+
         ConfigStorageLib.setPositionNFT(_positionNFT);
+        emit PositionNFTSet(_positionNFT);
     }
 
     // ============================================== Admin functions ==============================================
@@ -60,27 +66,31 @@ abstract contract ContangoBase is
         _unpause();
     }
 
-    function setClosingOnly(bool _closingOnly) external onlyRole(OPERATOR) {
+    function setClosingOnly(bool _closingOnly) external override onlyRole(OPERATOR) {
         ConfigStorageLib.setClosingOnly(_closingOnly);
+        emit ClosingOnlySet(_closingOnly);
     }
 
     function closingOnly() external view override returns (bool) {
         return ConfigStorageLib.getClosingOnly();
     }
 
-    function setClosingOnly(Symbol symbol, bool _closingOnly) external onlyRole(OPERATOR) {
+    function setClosingOnly(Symbol symbol, bool _closingOnly) external override onlyRole(OPERATOR) {
         StorageLib.setClosingOnly(symbol, _closingOnly);
+        emit ClosingOnlySet(symbol, _closingOnly);
     }
 
-    function setTrustedToken(address token, bool trusted) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setTrustedToken(address token, bool trusted) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         ConfigStorageLib.setTrustedToken(token, trusted);
+        emit TokenTrusted(token, trusted);
     }
 
-    function setFeeModel(Symbol symbol, IFeeModel _feeModel) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setFeeModel(Symbol symbol, IFeeModel _feeModel) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         StorageLib.setFeeModel(symbol, _feeModel);
+        emit FeeModelUpdated(symbol, _feeModel);
     }
 
-    function collectBalance(address token, address payable to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function collectBalance(ERC20 token, address payable to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _collectBalance(token, to, amount);
     }
 
@@ -111,9 +121,5 @@ abstract contract ContangoBase is
     /// @inheritdoc IContangoView
     function feeModel(Symbol symbol) public view override returns (IFeeModel) {
         return StorageLib.getInstrumentFeeModel()[symbol];
-    }
-
-    fallback() external payable {
-        revert FunctionNotFound(msg.sig);
     }
 }

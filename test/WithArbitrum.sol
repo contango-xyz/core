@@ -15,9 +15,9 @@ abstract contract WithArbitrum is ContangoTestBase {
         chainlinkUsdOracles[WETH9] = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612;
 
         positionNFT = ContangoPositionNFT(0x497931c260a6f76294465f7BBB5071802e97E109);
-        treasury = address(0x643178CF8AEc063962654CAc256FD1f7fe06ac28);
-        contangoTimelock = address(0xe213C68563EE4c519183AE6c8Fc15d60bEaD95bb);
-        contangoMultisig = address(0xE865379A78d65D4cc58472BC16514e39bDEB2759);
+        treasury = 0x643178CF8AEc063962654CAc256FD1f7fe06ac28;
+        contangoTimelock = 0xe213C68563EE4c519183AE6c8Fc15d60bEaD95bb;
+        contangoMultisig = 0xE865379A78d65D4cc58472BC16514e39bDEB2759;
         chain = "arbitrum";
         chainId = 42161;
     }

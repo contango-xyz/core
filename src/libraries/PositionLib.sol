@@ -3,13 +3,14 @@ pragma solidity 0.8.17;
 
 import "./CodecLib.sol";
 import "./DataTypes.sol";
-import "./ErrorLib.sol";
+import "./Errors.sol";
+import "./ConfigStorageLib.sol";
 import "./StorageLib.sol";
 
 library PositionLib {
     using CodecLib for uint256;
 
-    function positionOwner(PositionId positionId) internal view returns (address trader) {
+    function lookupPositionOwner(PositionId positionId) internal view returns (address trader) {
         trader = ConfigStorageLib.getPositionNFT().positionOwner(positionId);
         if (msg.sender != trader) {
             revert NotPositionOwner(positionId, msg.sender, trader);
@@ -32,7 +33,7 @@ library PositionLib {
     function validateExpiredPosition(PositionId positionId)
         internal
         view
-        returns (uint256 openQuantity, Symbol symbol, Instrument memory instrument)
+        returns (uint256 openQuantity, Symbol symbol, InstrumentStorage memory instrument)
     {
         openQuantity = validatePosition(positionId);
         (symbol, instrument) = StorageLib.getInstrument(positionId);
@@ -44,10 +45,10 @@ library PositionLib {
         }
     }
 
-    function validateActivePosition(PositionId positionId, uint24 uniswapFee)
+    function validateActivePosition(PositionId positionId)
         internal
         view
-        returns (uint256 openQuantity, Symbol symbol, Instrument memory instrument)
+        returns (uint256 openQuantity, Symbol symbol, InstrumentStorage memory instrument)
     {
         openQuantity = validatePosition(positionId);
         (symbol, instrument) = StorageLib.getInstrument(positionId);
@@ -57,16 +58,15 @@ library PositionLib {
         if (instrument.maturity <= timestamp) {
             revert PositionExpired(positionId, instrument.maturity, timestamp);
         }
-        instrument.uniswapFeeTransient = uniswapFee;
     }
 
-    function loadActivePosition(PositionId positionId, uint24 uniswapFee)
+    function loadActivePosition(PositionId positionId)
         internal
         view
-        returns (uint256 openQuantity, address owner, Symbol symbol, Instrument memory instrument)
+        returns (uint256 openQuantity, address owner, Symbol symbol, InstrumentStorage memory instrument)
     {
-        owner = positionOwner(positionId);
-        (openQuantity, symbol, instrument) = validateActivePosition(positionId, uniswapFee);
+        owner = lookupPositionOwner(positionId);
+        (openQuantity, symbol, instrument) = validateActivePosition(positionId);
     }
 
     function validatePayer(PositionId positionId, address payer, address trader) internal view {

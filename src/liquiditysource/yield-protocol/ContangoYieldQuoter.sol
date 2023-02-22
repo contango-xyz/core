@@ -13,10 +13,11 @@ import "../../libraries/CodecLib.sol";
 import "../../ContangoPositionNFT.sol";
 import "../../interfaces/IContangoQuoter.sol";
 import "../../libraries/QuoterDataTypes.sol";
-import "../../libraries/ErrorLib.sol";
+import "../../libraries/Errors.sol";
 import "../../libraries/QuoterLib.sol";
 import "./YieldUtils.sol";
-import "./ContangoYield.sol";
+import "./YieldQuoterUtils.sol";
+import "./interfaces/IContangoYield.sol";
 
 /// @title Contract for quoting position operations
 contract ContangoYieldQuoter is IContangoQuoter {
@@ -26,15 +27,16 @@ contract ContangoYieldQuoter is IContangoQuoter {
     using CodecLib for uint256;
     using QuoterLib for IQuoter;
     using YieldUtils for *;
+    using YieldQuoterUtils for *;
 
     ContangoPositionNFT public immutable positionNFT;
-    ContangoYield public immutable contangoYield;
+    IContangoYield public immutable contangoYield;
     ICauldron public immutable cauldron;
     IQuoter public immutable quoter;
     int256 private collateralSlippage;
     uint128 private maxAvailableDebt;
 
-    constructor(ContangoPositionNFT _positionNFT, ContangoYield _contangoYield, ICauldron _cauldron, IQuoter _quoter) {
+    constructor(ContangoPositionNFT _positionNFT, IContangoYield _contangoYield, ICauldron _cauldron, IQuoter _quoter) {
         positionNFT = _positionNFT;
         contangoYield = _contangoYield;
         cauldron = _cauldron;
@@ -47,23 +49,86 @@ contract ContangoYieldQuoter is IContangoQuoter {
         override
         returns (PositionStatus memory result)
     {
-        (, Instrument memory instrument, YieldInstrument memory yieldInstrument) =
-            _validatePosition(positionId, uniswapFee);
+        (, YieldInstrument memory instrument) = _validatePosition(positionId);
         DataTypes.Balances memory balances = cauldron.balances(positionId.toVaultId());
 
-        result = _positionStatus(balances, instrument, yieldInstrument);
+        result = _positionStatus(balances, instrument, uniswapFee);
 
         result.liquidating = cauldron.vaults(positionId.toVaultId()).owner != address(contangoYield);
     }
 
     /// @inheritdoc IContangoQuoter
-    function modifyCostForPosition(ModifyCostParams calldata params)
+    function modifyCostForPositionWithCollateral(ModifyCostParams calldata params, int256 collateral)
         external
         override
         returns (ModifyCostResult memory result)
     {
-        (Position memory position, Instrument memory instrument, YieldInstrument memory yieldInstrument) =
-            _validateActivePosition(params.positionId, params.uniswapFee);
+        result = _modifyCostForPosition(params, collateral, 0);
+    }
+
+    /// @inheritdoc IContangoQuoter
+    function modifyCostForPositionWithLeverage(ModifyCostParams calldata params, uint256 leverage)
+        external
+        override
+        returns (ModifyCostResult memory result)
+    {
+        result = _modifyCostForPosition(params, 0, leverage);
+    }
+
+    /// @inheritdoc IContangoQuoter
+    function openingCostForPositionWithCollateral(OpeningCostParams calldata params, uint256 collateral)
+        external
+        override
+        returns (ModifyCostResult memory result)
+    {
+        result = _openingCostForPosition(params, collateral, 0);
+    }
+
+    /// @inheritdoc IContangoQuoter
+    function openingCostForPositionWithLeverage(OpeningCostParams calldata params, uint256 leverage)
+        external
+        override
+        returns (ModifyCostResult memory result)
+    {
+        result = _openingCostForPosition(params, 0, leverage);
+    }
+
+    /// @inheritdoc IContangoQuoter
+    function deliveryCostForPosition(PositionId positionId) external override returns (uint256) {
+        (Position memory position, YieldInstrument memory instrument) = _validateExpiredPosition(positionId);
+        DataTypes.Balances memory balances = cauldron.balances(positionId.toVaultId());
+
+        return _deliveryCostForPosition(balances, instrument, position);
+    }
+
+    // ============================================== private functions ==============================================
+
+    function _openingCostForPosition(OpeningCostParams calldata params, uint256 collateral, uint256 leverage)
+        private
+        returns (ModifyCostResult memory result)
+    {
+        YieldInstrument memory instrument = _instrument(params.symbol);
+
+        _checkClosingOnly(params.symbol, instrument);
+
+        result = _modifyCostForLongPosition(
+            DataTypes.Balances({art: 0, ink: 0}),
+            instrument,
+            int256(params.quantity),
+            int256(collateral),
+            params.collateralSlippage,
+            leverage,
+            params.uniswapFee
+        );
+
+        result.fee = QuoterLib.fee(contangoYield, positionNFT, PositionId.wrap(0), params.symbol, result.cost.abs());
+    }
+
+    function _modifyCostForPosition(ModifyCostParams calldata params, int256 collateral, uint256 leverage)
+        private
+        returns (ModifyCostResult memory result)
+    {
+        (Position memory position, YieldInstrument memory instrument) = _validateActivePosition(params.positionId);
         DataTypes.Balances memory balances = cauldron.balances(params.positionId.toVaultId());
 
         if (params.quantity > 0) {
@@ -71,7 +136,7 @@ contract ContangoYieldQuoter is IContangoQuoter {
         }
 
         result = _modifyCostForLongPosition(
-            balances, instrument, yieldInstrument, params.quantity, params.collateral, params.collateralSlippage
+            balances, instrument, params.quantity, collateral, params.collateralSlippage, leverage, params.uniswapFee
         );
         if (result.needsBatchedCall || params.quantity == 0) {
             uint256 aggregateCost = (result.cost + result.financingCost).abs() + result.debtDelta.abs();
@@ -82,40 +147,7 @@ contract ContangoYieldQuoter is IContangoQuoter {
         }
     }
 
-    /// @inheritdoc IContangoQuoter
-    function openingCostForPosition(OpeningCostParams calldata params)
-        external
-        override
-        returns (ModifyCostResult memory result)
-    {
-        (Instrument memory instrument, YieldInstrument memory yieldInstrument) =
-            _instrument(params.symbol, params.uniswapFee);
-
-        _checkClosingOnly(params.symbol, instrument);
-
-        result = _modifyCostForLongPosition(
-            DataTypes.Balances({art: 0, ink: 0}),
-            instrument,
-            yieldInstrument,
-            int256(params.quantity),
-            int256(params.collateral),
-            params.collateralSlippage
-        );
-
-        result.fee = QuoterLib.fee(contangoYield, positionNFT, PositionId.wrap(0), params.symbol, result.cost.abs());
-    }
-
-    /// @inheritdoc IContangoQuoter
-    function deliveryCostForPosition(PositionId positionId) external override returns (uint256) {
-        (Position memory position,, YieldInstrument memory yieldInstrument) = _validateExpiredPosition(positionId);
-        DataTypes.Balances memory balances = cauldron.balances(positionId.toVaultId());
-
-        return _deliveryCostForPosition(balances, yieldInstrument, position);
-    }
-
-    // ============================================== private functions ==============================================
-
-    function _checkClosingOnly(Symbol symbol, Instrument memory instrument) private view {
+    function _checkClosingOnly(Symbol symbol, YieldInstrument memory instrument) private view {
         if (contangoYield.closingOnly()) {
             revert ClosingOnly();
         }
@@ -124,46 +156,47 @@ contract ContangoYieldQuoter is IContangoQuoter {
         }
     }
 
-    function _positionStatus(
-        DataTypes.Balances memory balances,
-        Instrument memory instrument,
-        YieldInstrument memory yieldInstrument
-    ) private returns (PositionStatus memory result) {
-        result.spotCost = quoter.spot(instrument, int128(balances.ink));
+    function _positionStatus(DataTypes.Balances memory balances, YieldInstrument memory instrument, uint24 uniswapFee)
+        internal
+        returns (PositionStatus memory result)
+    {
+        result.spotCost =
+            quoter.spot(address(instrument.base), address(instrument.quote), int128(balances.ink), uniswapFee);
         result.underlyingDebt = balances.art;
 
-        DataTypes.Series memory series = cauldron.series(yieldInstrument.quoteId);
-        DataTypes.SpotOracle memory spotOracle = cauldron.spotOracles(series.baseId, yieldInstrument.baseId);
+        DataTypes.Series memory series = cauldron.series(instrument.quoteId);
+        DataTypes.SpotOracle memory spotOracle = cauldron.spotOracles(series.baseId, instrument.baseId);
 
-        (result.underlyingCollateral,) = spotOracle.oracle.get(yieldInstrument.baseId, series.baseId, balances.ink);
+        (result.underlyingCollateral,) = spotOracle.oracle.get(instrument.baseId, series.baseId, balances.ink);
         result.liquidationRatio = uint256(spotOracle.ratio);
     }
 
     function _modifyCostForLongPosition(
         DataTypes.Balances memory balances,
-        Instrument memory instrument,
-        YieldInstrument memory yieldInstrument,
+        YieldInstrument memory instrument,
         int256 quantity,
         int256 collateral,
-        uint256 _collateralSlippage
+        uint256 _collateralSlippage,
+        uint256 leverage,
+        uint24 uniswapFee
     ) internal returns (ModifyCostResult memory result) {
         collateralSlippage = 1e18 + int256(_collateralSlippage);
-        result.minDebt = yieldInstrument.minQuoteDebt;
-        DataTypes.Series memory series = cauldron.series(yieldInstrument.quoteId);
-        DataTypes.Debt memory debt = cauldron.debt(series.baseId, yieldInstrument.baseId);
+        result.minDebt = instrument.minQuoteDebt;
+        DataTypes.Series memory series = cauldron.series(instrument.quoteId);
+        DataTypes.Debt memory debt = cauldron.debt(series.baseId, instrument.baseId);
         maxAvailableDebt = uint128(debt.max * (10 ** debt.dec)) - debt.sum;
-        _evaluateLiquidity(yieldInstrument, balances, result, quantity, collateral);
+        _evaluateLiquidity(instrument, balances, result, quantity, collateral);
 
         if (!result.insufficientLiquidity) {
-            _assignLiquidity(yieldInstrument, balances, result, quantity, collateral);
+            _assignLiquidity(instrument, balances, result, quantity, collateral);
 
             if (quantity >= 0) {
                 _increasingCostForLongPosition(
-                    result, balances, series, instrument, yieldInstrument, quantity.toUint256(), collateral
+                    result, balances, series, instrument, quantity.toUint256(), collateral, leverage, uniswapFee
                 );
             } else {
                 _closingCostForLongPosition(
-                    result, balances, series, instrument, yieldInstrument, quantity.abs(), collateral
+                    result, balances, series, instrument, quantity.abs(), collateral, leverage, uniswapFee
                 );
             }
         }
@@ -174,38 +207,32 @@ contract ContangoYieldQuoter is IContangoQuoter {
         ModifyCostResult memory result,
         DataTypes.Balances memory balances,
         DataTypes.Series memory series,
-        Instrument memory instrument,
-        YieldInstrument memory yieldInstrument,
+        YieldInstrument memory instrument,
         uint256 quantity,
-        int256 collateral
+        int256 collateral,
+        uint256 leverage,
+        uint24 uniswapFee
     ) private {
         uint256 hedge;
         int256 quoteQty;
 
         if (quantity > 0) {
-            if (result.baseLendingLiquidity < quantity) {
-                hedge = result.baseLendingLiquidity == 0
-                    ? 0
-                    : yieldInstrument.basePool.buyFYTokenPreviewZero(uint128(result.baseLendingLiquidity));
-                uint256 toMint = quantity - result.baseLendingLiquidity;
-                hedge += toMint;
-            } else {
-                hedge = yieldInstrument.basePool.buyFYTokenPreviewZero(quantity.toUint128());
-            }
-
-            quoteQty = -int256(quoter.spot(instrument, -int256(hedge)));
-            result.spotCost = -int256(quoter.spot(instrument, -int256(quantity)));
+            hedge = instrument.basePool.buyFYTokenPreview.orMint(quantity.toUint128(), result.baseLendingLiquidity);
+            quoteQty =
+                -int256(quoter.spot(address(instrument.base), address(instrument.quote), -int256(hedge), uniswapFee));
+            result.spotCost =
+                -int256(quoter.spot(address(instrument.base), address(instrument.quote), -int256(quantity), uniswapFee));
         }
 
-        DataTypes.SpotOracle memory spotOracle = cauldron.spotOracles(series.baseId, yieldInstrument.baseId);
+        DataTypes.SpotOracle memory spotOracle = cauldron.spotOracles(series.baseId, instrument.baseId);
         (result.underlyingCollateral,) =
-            spotOracle.oracle.get(yieldInstrument.baseId, series.baseId, balances.ink + quantity); // ink * spot
+            spotOracle.oracle.get(instrument.baseId, series.baseId, balances.ink + quantity); // ink * spot
         result.liquidationRatio = uint256(spotOracle.ratio);
 
-        _calculateMinCollateral(balances, yieldInstrument, result, quoteQty);
-        _calculateMaxCollateral(balances, yieldInstrument, result, quoteQty);
-        _assignCollateralUsed(result, collateral);
-        _calculateCost(balances, yieldInstrument, result, quoteQty, true);
+        _calculateMinCollateral(balances, instrument, result, quoteQty);
+        _calculateMaxCollateral(balances, instrument, result, quoteQty);
+        _assignCollateralUsed(instrument, balances, result, collateral, leverage, quoteQty);
+        _calculateCost(balances, instrument, result, quoteQty);
     }
 
     /// @notice Quotes the bid rate, the base/quote are derived from the positionId
@@ -214,40 +241,43 @@ contract ContangoYieldQuoter is IContangoQuoter {
         ModifyCostResult memory result,
         DataTypes.Balances memory balances,
         DataTypes.Series memory series,
-        Instrument memory instrument,
-        YieldInstrument memory yieldInstrument,
+        YieldInstrument memory instrument,
         uint256 quantity,
-        int256 collateral
+        int256 collateral,
+        uint256 leverage,
+        uint24 uniswapFee
     ) private {
         uint256 amountRealBaseReceivedFromSellingLendingPosition =
-            yieldInstrument.basePool.sellFYTokenPreview(quantity.toUint128());
+            instrument.basePool.sellFYTokenPreview(quantity.toUint128());
 
-        result.spotCost = int256(quoter.spot(instrument, int256(quantity)));
-        int256 hedgeCost = int256(quoter.spot(instrument, int256(amountRealBaseReceivedFromSellingLendingPosition)));
+        result.spotCost =
+            int256(quoter.spot(address(instrument.base), address(instrument.quote), int256(quantity), uniswapFee));
+        int256 hedgeCost = int256(
+            quoter.spot(
+                address(instrument.base),
+                address(instrument.quote),
+                int256(amountRealBaseReceivedFromSellingLendingPosition),
+                uniswapFee
+            )
+        );
 
-        DataTypes.SpotOracle memory spotOracle = cauldron.spotOracles(series.baseId, yieldInstrument.baseId);
+        DataTypes.SpotOracle memory spotOracle = cauldron.spotOracles(series.baseId, instrument.baseId);
         result.liquidationRatio = uint256(spotOracle.ratio);
 
         if (balances.ink == quantity) {
             uint256 costRecovered;
             if (balances.art != 0) {
-                if (result.quoteLendingLiquidity < balances.art) {
-                    costRecovered = result.quoteLendingLiquidity > 0
-                        ? result.quoteLendingLiquidity
-                            - yieldInstrument.quotePool.buyFYTokenPreviewZero(uint128(result.quoteLendingLiquidity))
-                        : 0;
-                } else {
-                    costRecovered = balances.art - yieldInstrument.quotePool.buyFYTokenPreviewZero(balances.art);
-                }
+                costRecovered = balances.art
+                    - instrument.quotePool.buyFYTokenPreview.orMint(balances.art, result.quoteLendingLiquidity);
             }
             result.cost = hedgeCost + int256(costRecovered);
         } else {
             (result.underlyingCollateral,) =
-                spotOracle.oracle.get(yieldInstrument.baseId, series.baseId, balances.ink - quantity);
-            _calculateMinCollateral(balances, yieldInstrument, result, hedgeCost);
-            _calculateMaxCollateral(balances, yieldInstrument, result, hedgeCost);
-            _assignCollateralUsed(result, collateral);
-            _calculateCost(balances, yieldInstrument, result, hedgeCost, false);
+                spotOracle.oracle.get(instrument.baseId, series.baseId, balances.ink - quantity);
+            _calculateMinCollateral(balances, instrument, result, hedgeCost);
+            _calculateMaxCollateral(balances, instrument, result, hedgeCost);
+            _assignCollateralUsed(instrument, balances, result, collateral, leverage, hedgeCost);
+            _calculateCost(balances, instrument, result, hedgeCost);
         }
     }
 
@@ -269,10 +299,7 @@ contract ContangoYieldQuoter is IContangoQuoter {
 
         if (balances.art > maxDebtAfterModify) {
             uint128 diff = balances.art - maxDebtAfterModify;
-            uint128 liquidity = instrument.quotePool.maxFYTokenOut.cap();
-            uint256 minDebtThatHasToBeBurnedPV = diff > liquidity
-                ? instrument.quotePool.buyFYTokenPreviewZero(liquidity) + (diff - liquidity)
-                : instrument.quotePool.buyFYTokenPreviewZero(diff);
+            uint256 minDebtThatHasToBeBurnedPV = instrument.quotePool.buyFYTokenPreview.orMint(diff);
 
             result.minCollateral = int256(minDebtThatHasToBeBurnedPV) - spotCost;
         }
@@ -293,20 +320,10 @@ contract ContangoYieldQuoter is IContangoQuoter {
         // this covers the case where there is no existing debt, which applies to new positions or fully liquidated positions
         if (balances.art == 0) {
             uint256 minDebtPV = instrument.quotePool.sellFYTokenPreview(result.minDebt);
-            result.maxCollateral = int256(spotCost.abs() - minDebtPV);
+            result.maxCollateral = int256(spotCost.abs()) - int256(minDebtPV);
         } else {
-            uint128 maxFYTokenOut = instrument.quotePool.maxFYTokenOut.cap();
             uint128 maxDebtThatCanBeBurned = balances.art - result.minDebt;
-            uint256 maxDebtThatCanBeBurnedPV;
-            if (maxDebtThatCanBeBurned > 0) {
-                uint128 inputValue = maxFYTokenOut < maxDebtThatCanBeBurned ? maxFYTokenOut : maxDebtThatCanBeBurned;
-                maxDebtThatCanBeBurnedPV = instrument.quotePool.buyFYTokenPreviewZero(inputValue);
-
-                // when minting 1:1
-                if (maxDebtThatCanBeBurned > inputValue) {
-                    maxDebtThatCanBeBurnedPV += maxDebtThatCanBeBurned - inputValue;
-                }
-            }
+            uint256 maxDebtThatCanBeBurnedPV = instrument.quotePool.buyFYTokenPreview.orMint(maxDebtThatCanBeBurned);
             result.maxCollateral = int256(maxDebtThatCanBeBurnedPV) - spotCost;
         }
 
@@ -327,35 +344,26 @@ contract ContangoYieldQuoter is IContangoQuoter {
         DataTypes.Balances memory balances,
         YieldInstrument memory instrument,
         ModifyCostResult memory result,
-        int256 spotCost,
-        bool isIncrease
+        int256 spotCost
     ) private view {
         int256 quoteUsedToRepayDebt = result.collateralUsed + spotCost;
         result.underlyingDebt = balances.art;
         uint128 debtDelta128;
 
         if (quoteUsedToRepayDebt > 0) {
-            uint128 baseToSell = uint128(uint256(quoteUsedToRepayDebt));
-            uint128 maxBaseIn = instrument.quotePool.maxBaseIn.cap();
-            if (maxBaseIn < baseToSell) {
-                debtDelta128 = instrument.quotePool.sellBasePreviewZero(uint128(maxBaseIn));
-                // remainder is paid by minting 1:1
-                debtDelta128 += baseToSell - uint128(maxBaseIn);
-            } else {
-                debtDelta128 = instrument.quotePool.sellBasePreview(baseToSell);
-            }
-            result.debtDelta = -int256(uint256(debtDelta128));
+            debtDelta128 = instrument.quotePool.sellBasePreview.orMint(uint128(uint256(quoteUsedToRepayDebt)));
+            result.debtDelta = -int128(debtDelta128);
             result.underlyingDebt -= debtDelta128;
-            if (isIncrease && spotCost != 0) {
+            if (spotCost < 0) {
                 // this means we're increasing, and posting more than what we need to pay the spot
                 result.needsBatchedCall = true;
             }
         }
         if (quoteUsedToRepayDebt < 0) {
             debtDelta128 = instrument.quotePool.buyBasePreview(quoteUsedToRepayDebt.abs().toUint128());
-            result.debtDelta = int256(uint256(debtDelta128));
+            result.debtDelta = int128(debtDelta128);
             result.underlyingDebt += debtDelta128;
-            if (!isIncrease && spotCost != 0) {
+            if (spotCost > 0) {
                 // this means that we're decreasing, and withdrawing more than we get from the spot
                 result.needsBatchedCall = true;
             }
@@ -416,25 +424,63 @@ contract ContangoYieldQuoter is IContangoQuoter {
         }
     }
 
-    function _assignCollateralUsed(ModifyCostResult memory result, int256 collateral) private pure {
+    function _assignCollateralUsed(
+        YieldInstrument memory instrument,
+        DataTypes.Balances memory balances,
+        ModifyCostResult memory result,
+        int256 collateral,
+        uint256 leverage,
+        int256 hedgeCost
+    ) private view {
+        collateral =
+            leverage > 0 ? _deriveCollateralFromLeverage(instrument, balances, result, leverage, hedgeCost) : collateral;
+
         // if 'collateral' is above the max, use result.maxCollateral
         result.collateralUsed = SignedMath.min(collateral, result.maxCollateral);
         // if result.collateralUsed is lower than max, but still lower than the min, use the min
         result.collateralUsed = SignedMath.max(result.minCollateral, result.collateralUsed);
     }
 
-    function _deliveryCostForPosition(
+    // leverage = 1 / ((underlyingCollateral - underlyingDebt) / underlyingCollateral)
+    // leverage = underlyingCollateral / (underlyingCollateral - underlyingDebt)
+    // underlyingDebt = -underlyingCollateral / leverage + underlyingCollateral
+    // collateral = hedgeCost - underlyingDebtPV
+    function _deriveCollateralFromLeverage(
+        YieldInstrument memory instrument,
         DataTypes.Balances memory balances,
-        YieldInstrument memory yieldInstrument,
-        Position memory position
-    ) internal returns (uint256) {
-        return cauldron.debtToBase(yieldInstrument.quoteId, balances.art) + position.protocolFees;
+        ModifyCostResult memory result,
+        uint256 leverage,
+        int256 hedgeCost
+    ) internal view returns (int256 collateral) {
+        uint256 debtFV = (
+            ((-int256(result.underlyingCollateral) * 1e18) / int256(leverage)) + int256(result.underlyingCollateral)
+        ).toUint256();
+
+        int256 debtPV;
+
+        if (debtFV > balances.art) {
+            // Debt needs to increase to reach the desired leverage
+            debtPV = -int128(instrument.quotePool.sellFYTokenPreview(debtFV.toUint128() - balances.art));
+        } else {
+            // Debt needs to be burnt to reach the desired leverage
+            debtPV = int128(instrument.quotePool.buyFYTokenPreview.orMint(balances.art - debtFV.toUint128()));
+        }
+
+        collateral = debtPV - hedgeCost;
     }
 
-    function _validatePosition(PositionId positionId, uint24 uniswapFee)
+    function _deliveryCostForPosition(
+        DataTypes.Balances memory balances,
+        YieldInstrument memory instrument,
+        Position memory position
+    ) internal returns (uint256) {
+        return cauldron.debtToBase(instrument.quoteId, balances.art) + position.protocolFees;
+    }
+
+    function _validatePosition(PositionId positionId)
         private
         view
-        returns (Position memory position, Instrument memory instrument, YieldInstrument memory yieldInstrument)
+        returns (Position memory position, YieldInstrument memory instrument)
     {
         position = contangoYield.position(positionId);
         if (position.openQuantity == 0 && position.openCost == 0) {
@@ -442,15 +488,15 @@ contract ContangoYieldQuoter is IContangoQuoter {
                 revert InvalidPosition(positionId);
             }
         }
-        (instrument, yieldInstrument) = _instrument(position.symbol, uniswapFee);
+        instrument = _instrument(position.symbol);
     }
 
-    function _validateActivePosition(PositionId positionId, uint24 uniswapFee)
+    function _validateActivePosition(PositionId positionId)
         private
         view
-        returns (Position memory position, Instrument memory instrument, YieldInstrument memory yieldInstrument)
+        returns (Position memory position, YieldInstrument memory instrument)
     {
-        (position, instrument, yieldInstrument) = _validatePosition(positionId, uniswapFee);
+        (position, instrument) = _validatePosition(positionId);
 
         // solhint-disable-next-line not-rely-on-time
         uint256 timestamp = block.timestamp;
@@ -462,9 +508,9 @@ contract ContangoYieldQuoter is IContangoQuoter {
     function _validateExpiredPosition(PositionId positionId)
         private
         view
-        returns (Position memory position, Instrument memory instrument, YieldInstrument memory yieldInstrument)
+        returns (Position memory position, YieldInstrument memory instrument)
     {
-        (position, instrument, yieldInstrument) = _validatePosition(positionId, 0);
+        (position, instrument) = _validatePosition(positionId);
 
         // solhint-disable-next-line not-rely-on-time
         uint256 timestamp = block.timestamp;
@@ -473,21 +519,11 @@ contract ContangoYieldQuoter is IContangoQuoter {
         }
     }
 
-    function _instrument(Symbol symbol, uint24 uniswapFee)
-        private
-        view
-        returns (Instrument memory instrument, YieldInstrument memory yieldInstrument)
-    {
-        (instrument, yieldInstrument) = contangoYield.yieldInstrument(symbol);
-        instrument.uniswapFeeTransient = uniswapFee;
+    function _instrument(Symbol symbol) private view returns (YieldInstrument memory) {
+        return contangoYield.yieldInstrumentV2(symbol);
     }
 
     receive() external payable {
         revert ViewOnly();
-    }
-
-    /// @notice reverts on fallback for informational purposes
-    fallback() external payable {
-        revert FunctionNotFound(msg.sig);
     }
 }

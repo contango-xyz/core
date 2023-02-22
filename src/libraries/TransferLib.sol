@@ -6,12 +6,12 @@ import "solmate/src/utils/SafeTransferLib.sol";
 library TransferLib {
     using SafeTransferLib for ERC20;
 
-    error ZeroAddress(address payer, address to);
+    error ZeroPayer();
+    error ZeroDestination();
 
     function transferOut(ERC20 token, address payer, address to, uint256 amount) internal returns (uint256) {
-        if (payer == address(0) || to == address(0)) {
-            revert ZeroAddress(payer, to);
-        }
+        if (payer == address(0)) revert ZeroPayer();
+        if (to == address(0)) revert ZeroDestination();
 
         // If we are the payer, it's because the funds where transferred first or it was WETH wrapping
         payer == address(this) ? token.safeTransfer(to, amount) : token.safeTransferFrom(payer, to, amount);

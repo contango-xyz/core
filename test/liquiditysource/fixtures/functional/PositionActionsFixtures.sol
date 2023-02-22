@@ -28,6 +28,24 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         // 800 - 2.103202 = 797.896798
         assertEqDecimal(position.collateral, 797.896798e6, quoteDecimals, "collateral");
 
+        {
+            Vm.Log memory _log =
+                recordedLogs.first("ContractBought(bytes32,address,uint256,uint256,uint256,uint256,uint256,int256)");
+            assertEq(_log.topics[1], Symbol.unwrap(symbol));
+            assertEq(uint256(_log.topics[2]), uint160(address(trader)));
+            assertEq(uint256(_log.topics[3]), PositionId.unwrap(positionId));
+
+            Fill memory fill = abi.decode(_log.data, (Fill));
+
+            assertEqDecimal(fill.size, position.openQuantity, baseDecimals, "fill.size");
+            assertEqDecimal(fill.cost, position.openCost, quoteDecimals, "fill.cost");
+            assertEqDecimal(fill.collateral, result.collateralUsed, quoteDecimals, "fill.collateral");
+            // 2 * 0.955 (ask rate) = 1.91 ETH
+            assertApproxEqAbsDecimal(fill.hedgeSize, 1.91e18, maxBaseDust, baseDecimals, "fill.hedgeSize");
+            // 1.91 * 701 = 1338.91 (total USDC needed)
+            assertApproxEqAbsDecimal(fill.hedgeCost, 1338.91e6, costBuffer, quoteDecimals, "fill.hedgeCost");
+        }
+
         _assertNoBalances(trader, "trader");
     }
 
@@ -52,7 +70,8 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         _assertNoBalances(trader, "trader");
 
         // Increase
-        result = _modifyPosition({positionId: positionId, quantity: 0.5 ether, collateral: 0});
+        uint256 increaseQuantity = 0.5 ether;
+        result = _modifyPosition({positionId: positionId, quantity: int256(increaseQuantity), collateral: 0});
         assertApproxEqAbsDecimal(result.cost, -373.997207e6, costBuffer, quoteDecimals, "increase result.cost");
         assertEqDecimal(result.fee, 0.560996e6, quoteDecimals, "increase result.fee");
         assertEqDecimal(result.collateralUsed, 0, quoteDecimals, "decrease collateralUsed");
@@ -70,6 +89,24 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         // open collateral - increase fees
         // 548.974796 - 0.560996 = 548.4138
         assertEqDecimal(position.collateral, 548.4138e6, quoteDecimals, "increase collateral");
+
+        {
+            Vm.Log memory _log =
+                recordedLogs.first("ContractBought(bytes32,address,uint256,uint256,uint256,uint256,uint256,int256)");
+            assertEq(_log.topics[1], Symbol.unwrap(symbol));
+            assertEq(uint256(_log.topics[2]), uint160(address(trader)));
+            assertEq(uint256(_log.topics[3]), PositionId.unwrap(positionId));
+
+            Fill memory fill = abi.decode(_log.data, (Fill));
+
+            assertEqDecimal(fill.size, increaseQuantity, baseDecimals, "fill.size");
+            assertApproxEqAbsDecimal(fill.cost, 373.997207e6, costBuffer, quoteDecimals, "fill.cost");
+            assertEqDecimal(fill.collateral, 0, quoteDecimals, "fill.collateral");
+            // 0.5 * 0.955 (ask rate) = 0.4775 ETH
+            assertApproxEqAbsDecimal(fill.hedgeSize, 0.4775e18, maxBaseDust, baseDecimals, "fill.hedgeSize");
+            // 0.4775 * 701 = 334.7275 (total USDC needed)
+            assertApproxEqAbsDecimal(fill.hedgeCost, 334.7275e6, costBuffer, quoteDecimals, "fill.hedgeCost");
+        }
 
         _assertNoBalances(trader, "trader");
     }
@@ -95,7 +132,8 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         _assertNoBalances(trader, "trader");
 
         // Decrease
-        result = _modifyPosition({positionId: positionId, quantity: -0.5 ether, collateral: 0});
+        uint256 decreaseQuantity = 0.5 ether;
+        result = _modifyPosition({positionId: positionId, quantity: -int256(decreaseQuantity), collateral: 0});
         assertEqDecimal(result.cost, 364.947513e6, quoteDecimals, "decrease result.cost");
         assertEqDecimal(result.fee, 0.547422e6, quoteDecimals, "decrease result.fee");
         assertEqDecimal(result.collateralUsed, 0, quoteDecimals, "decrease collateralUsed");
@@ -115,6 +153,24 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         // open collateral - decrease fees + (cost - closedCost)
         // 797.896798 - 0.547422 + (364.947513 - 350.53351975) = 811.763369
         assertApproxEqAbsDecimal(position.collateral, 811.763369e6, costBuffer, quoteDecimals, "decrease collateral");
+
+        {
+            Vm.Log memory _log =
+                recordedLogs.first("ContractSold(bytes32,address,uint256,uint256,uint256,uint256,uint256,int256)");
+            assertEq(_log.topics[1], Symbol.unwrap(symbol));
+            assertEq(uint256(_log.topics[2]), uint160(address(trader)));
+            assertEq(uint256(_log.topics[3]), PositionId.unwrap(positionId));
+
+            Fill memory fill = abi.decode(_log.data, (Fill));
+
+            assertEqDecimal(fill.size, decreaseQuantity, baseDecimals, "fill.size");
+            assertApproxEqAbsDecimal(fill.cost, 364.947513e6, costBuffer, quoteDecimals, "fill.cost");
+            assertEqDecimal(fill.collateral, 0, quoteDecimals, "fill.collateral");
+            // 0.5 * 0.945 (bid rate) = 0.4725 ETH
+            assertApproxEqAbsDecimal(fill.hedgeSize, 0.4725e18, 1, baseDecimals, "fill.hedgeSize");
+            // 0.4725 * 699 = 330.2775 (total USDC received)
+            assertEqDecimal(fill.hedgeCost, 330.2775e6, quoteDecimals, "fill.hedgeCost");
+        }
 
         _assertNoBalances(trader, "trader");
     }
@@ -151,6 +207,24 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         assertApproxEqAbsDecimal(
             quote.balanceOf(trader), 772.007987e6, costBuffer, quoteDecimals, "trader quote balance"
         );
+
+        {
+            Vm.Log memory _log =
+                recordedLogs.first("ContractSold(bytes32,address,uint256,uint256,uint256,uint256,uint256,int256)");
+            assertEq(_log.topics[1], Symbol.unwrap(symbol));
+            assertEq(uint256(_log.topics[2]), uint160(address(trader)));
+            assertEq(uint256(_log.topics[3]), PositionId.unwrap(positionId));
+
+            Fill memory fill = abi.decode(_log.data, (Fill));
+
+            assertEqDecimal(fill.size, position.openQuantity, baseDecimals, "fill.size");
+            assertApproxEqAbsDecimal(fill.cost, 1378.312738e6, costBuffer, quoteDecimals, "fill.cost");
+            assertEqDecimal(fill.collateral, 0, quoteDecimals, "fill.collateral");
+            // 2 * 0.945 (bid rate) = 1.89 ETH
+            assertApproxEqAbsDecimal(fill.hedgeSize, 1.89e18, 1, baseDecimals, "fill.hedgeSize");
+            // 1.89 * 699 = 1321.11 (total USDC received)
+            assertEqDecimal(fill.hedgeCost, 1321.11e6, quoteDecimals, "fill.hedgeCost");
+        }
     }
 
     function testIncreaseAndDeposit() public {
@@ -174,7 +248,10 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         _assertNoBalances(trader, "trader");
 
         // Increase
-        result = _modifyPosition({positionId: positionId, quantity: 0.5 ether, collateral: 50e6});
+        uint256 increaseQuantity = 0.5 ether;
+        int256 depositCollateral = 50e6;
+        result =
+            _modifyPosition({positionId: positionId, quantity: int256(increaseQuantity), collateral: depositCollateral});
         assertApproxEqAbsDecimal(result.cost, -368.131285e6, costBuffer, quoteDecimals, "increase result.cost");
         assertEqDecimal(result.fee, 0.552197e6, quoteDecimals, "increase result.fee");
         assertEqDecimal(result.collateralUsed, 50e6, quoteDecimals, "decrease collateralUsed");
@@ -192,6 +269,24 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         // open collateral - increase fee + collateral posted
         // 498.965997 - 0.552197 + 50 = 548.4138
         assertEqDecimal(position.collateral, 548.4138e6, quoteDecimals, "increase collateral");
+
+        {
+            Vm.Log memory _log =
+                recordedLogs.first("ContractBought(bytes32,address,uint256,uint256,uint256,uint256,uint256,int256)");
+            assertEq(_log.topics[1], Symbol.unwrap(symbol));
+            assertEq(uint256(_log.topics[2]), uint160(address(trader)));
+            assertEq(uint256(_log.topics[3]), PositionId.unwrap(positionId));
+
+            Fill memory fill = abi.decode(_log.data, (Fill));
+
+            assertEqDecimal(fill.size, increaseQuantity, baseDecimals, "fill.size");
+            assertApproxEqAbsDecimal(fill.cost, 368.131285e6, costBuffer, quoteDecimals, "fill.cost");
+            assertEqDecimal(fill.collateral, depositCollateral, quoteDecimals, "fill.collateral");
+            // 0.5 * 0.955 (ask rate) = 0.4775 ETH
+            assertApproxEqAbsDecimal(fill.hedgeSize, 0.4775e18, maxBaseDust, baseDecimals, "fill.hedgeSize");
+            // 0.4775 * 701 = 334.7275 (total USDC needed)
+            assertApproxEqAbsDecimal(fill.hedgeCost, 334.7275e6, costBuffer, quoteDecimals, "fill.hedgeCost");
+        }
 
         _assertNoBalances(trader, "trader");
     }
@@ -217,10 +312,16 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         _assertNoBalances(trader, "trader");
 
         // Increase
-        result = _modifyPosition({positionId: positionId, quantity: 0.5 ether, collateral: -50e6});
+        uint256 increaseQuantity = 0.5 ether;
+        int256 withdrawCollateral = -50e6;
+        result = _modifyPosition({
+            positionId: positionId,
+            quantity: int256(increaseQuantity),
+            collateral: withdrawCollateral
+        });
         assertApproxEqAbsDecimal(result.cost, -379.863129e6, costBuffer, quoteDecimals, "increase result.cost");
         assertEqDecimal(result.fee, 0.569795e6, quoteDecimals, "increase result.fee");
-        assertEqDecimal(result.collateralUsed, -50e6, quoteDecimals, "increase result.collateralUsed");
+        assertEqDecimal(result.collateralUsed, withdrawCollateral, quoteDecimals, "increase result.collateralUsed");
 
         position = contango.position(positionId);
         // open quantity + increase quantity
@@ -236,7 +337,25 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         // 498.965997 - 0.569795 - 50 = 448.396202
         assertEqDecimal(position.collateral, 448.396202e6, quoteDecimals, "increase collateral");
 
-        assertEqDecimal(quote.balanceOf(trader), 50e6, quoteDecimals, "trader quote balance");
+        {
+            Vm.Log memory _log =
+                recordedLogs.first("ContractBought(bytes32,address,uint256,uint256,uint256,uint256,uint256,int256)");
+            assertEq(_log.topics[1], Symbol.unwrap(symbol));
+            assertEq(uint256(_log.topics[2]), uint160(address(trader)));
+            assertEq(uint256(_log.topics[3]), PositionId.unwrap(positionId));
+
+            Fill memory fill = abi.decode(_log.data, (Fill));
+
+            assertEqDecimal(fill.size, increaseQuantity, baseDecimals, "fill.size");
+            assertApproxEqAbsDecimal(fill.cost, 379.863128e6, costBuffer, quoteDecimals, "fill.cost");
+            assertEqDecimal(fill.collateral, withdrawCollateral, quoteDecimals, "fill.collateral");
+            // 0.5 * 0.955 (ask rate) = 0.4775 ETH
+            assertApproxEqAbsDecimal(fill.hedgeSize, 0.4775e18, maxBaseDust, baseDecimals, "fill.hedgeSize");
+            // 0.4775 * 701 = 334.7275 (total USDC needed)
+            assertApproxEqAbsDecimal(fill.hedgeCost, 334.7275e6, costBuffer, quoteDecimals, "fill.hedgeCost");
+        }
+
+        assertEqDecimal(quote.balanceOf(trader), uint256(-withdrawCollateral), quoteDecimals, "trader quote balance");
     }
 
     function testDecreaseAndDeposit() public {
@@ -260,7 +379,13 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         _assertNoBalances(trader, "trader");
 
         // Decrease
-        result = _modifyPosition({positionId: positionId, quantity: -0.5 ether, collateral: 50e6});
+        uint256 decreaseQuantity = 0.5 ether;
+        int256 depositCollateral = 50e6;
+        result = _modifyPosition({
+            positionId: positionId,
+            quantity: -int256(decreaseQuantity),
+            collateral: depositCollateral
+        });
         assertEqDecimal(result.cost, 370.196132e6, quoteDecimals, "decrease result.cost");
         assertEqDecimal(result.fee, 0.555295e6, quoteDecimals, "decrease result.fee");
         assertEqDecimal(result.collateralUsed, 50e6, quoteDecimals, "decrease collateralUsed");
@@ -280,6 +405,24 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         // open collateral - decrease fees + (cost - closedCost) + deposited collateral
         // 797.896798 - 0.555295 + (370.196132 - 350.53351975) + 50 = 867.004115
         assertApproxEqAbsDecimal(position.collateral, 867.004115e6, costBuffer, quoteDecimals, "decrease collateral");
+
+        {
+            Vm.Log memory _log =
+                recordedLogs.first("ContractSold(bytes32,address,uint256,uint256,uint256,uint256,uint256,int256)");
+            assertEq(_log.topics[1], Symbol.unwrap(symbol));
+            assertEq(uint256(_log.topics[2]), uint160(address(trader)));
+            assertEq(uint256(_log.topics[3]), PositionId.unwrap(positionId));
+
+            Fill memory fill = abi.decode(_log.data, (Fill));
+
+            assertEqDecimal(fill.size, decreaseQuantity, baseDecimals, "fill.size");
+            assertApproxEqAbsDecimal(fill.cost, 370.196132e6, costBuffer, quoteDecimals, "fill.cost");
+            assertEqDecimal(fill.collateral, depositCollateral, quoteDecimals, "fill.collateral");
+            // 0.5 * 0.945 (bid rate) = 0.4725 ETH
+            assertApproxEqAbsDecimal(fill.hedgeSize, 0.4725e18, maxBaseDust, baseDecimals, "fill.hedgeSize");
+            // 0.4725 * 699 = 330.2775 (total USDC received)
+            assertEqDecimal(fill.hedgeCost, 330.2775e6, quoteDecimals, "fill.hedgeCost");
+        }
 
         _assertNoBalances(trader, "trader");
     }
@@ -305,10 +448,16 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         _assertNoBalances(trader, "trader");
 
         // Decrease
-        result = _modifyPosition({positionId: positionId, quantity: -0.5 ether, collateral: -50e6});
+        uint256 decreaseQuantity = 0.5 ether;
+        int256 withdrawCollateral = -50e6;
+        result = _modifyPosition({
+            positionId: positionId,
+            quantity: -int256(decreaseQuantity),
+            collateral: withdrawCollateral
+        });
         assertEqDecimal(result.cost, 359.698895e6, quoteDecimals, "decrease result.cost");
         assertEqDecimal(result.fee, 0.539549e6, quoteDecimals, "decrease result.fee");
-        assertEqDecimal(result.collateralUsed, -50e6, quoteDecimals, "decrease result.collateralUsed");
+        assertEqDecimal(result.collateralUsed, withdrawCollateral, quoteDecimals, "decrease result.collateralUsed");
 
         position = contango.position(positionId);
         // open quantity - decrease quantity
@@ -325,6 +474,24 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         // open collateral - decrease fees + (cost - closedCost) - withdrawn collateral
         // 797.896798 - 0.539549 + (359.698895 - 350.53351975) - 50 = 756.522624
         assertApproxEqAbsDecimal(position.collateral, 756.522624e6, costBuffer, quoteDecimals, "decrease collateral");
+
+        {
+            Vm.Log memory _log =
+                recordedLogs.first("ContractSold(bytes32,address,uint256,uint256,uint256,uint256,uint256,int256)");
+            assertEq(_log.topics[1], Symbol.unwrap(symbol));
+            assertEq(uint256(_log.topics[2]), uint160(address(trader)));
+            assertEq(uint256(_log.topics[3]), PositionId.unwrap(positionId));
+
+            Fill memory fill = abi.decode(_log.data, (Fill));
+
+            assertEqDecimal(fill.size, decreaseQuantity, baseDecimals, "fill.size");
+            assertApproxEqAbsDecimal(fill.cost, 359.698895e6, costBuffer, quoteDecimals, "fill.cost");
+            assertEqDecimal(fill.collateral, withdrawCollateral, quoteDecimals, "fill.collateral");
+            // 0.5 * 0.945 (bid rate) = 0.4725 ETH
+            assertApproxEqAbsDecimal(fill.hedgeSize, 0.4725e18, maxBaseDust, baseDecimals, "fill.hedgeSize");
+            // 0.4725 * 699 = 330.2775 (total USDC received)
+            assertEqDecimal(fill.hedgeCost, 330.2775e6, quoteDecimals, "fill.hedgeCost");
+        }
 
         assertEqDecimal(quote.balanceOf(trader), 50e6, quoteDecimals, "trader quote balance");
     }
@@ -343,8 +510,8 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
     }
 
     function testCanNotOpenRightAboveMaxCollateral() public {
-        ModifyCostResult memory result = contangoQuoter.openingCostForPosition(
-            OpeningCostParams(symbol, 2 ether, uint256(type(int256).max), collateralSlippage, uniswapFee)
+        ModifyCostResult memory result = contangoQuoter.openingCostForPositionWithCollateral(
+            OpeningCostParams(symbol, 2 ether, collateralSlippage, uniswapFee), uint256(type(int256).max)
         );
 
         uint256 collateral = result.collateralUsed.toUint256() + 2e6;
@@ -371,11 +538,10 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         ModifyCostParams memory modifyParams = ModifyCostParams({
             positionId: positionId,
             quantity: -0.25 ether,
-            collateral: 0,
             collateralSlippage: collateralSlippage,
             uniswapFee: uniswapFee
         });
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(modifyParams, 0);
         assertEq(result.collateralUsed, 0, "collateralUsed");
         assertEqDecimal(result.cost, 182.473756e6, quoteDecimals, "cost");
 
@@ -401,14 +567,12 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         ModifyCostParams memory modifyParams = ModifyCostParams({
             positionId: positionId,
             quantity: -0.25 ether,
-            collateral: 0,
             collateralSlippage: collateralSlippage,
             uniswapFee: uniswapFee
         });
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(modifyParams, 0);
 
-        modifyParams.collateral = result.minCollateral;
-        result = contangoQuoter.modifyCostForPosition(modifyParams);
+        result = contangoQuoter.modifyCostForPositionWithCollateral(modifyParams, result.minCollateral);
 
         uint256 expectedCostAfterDecrease = ((positionBefore.openCost * 0.875e3) / 1e3) + uint256(result.financingCost);
 
@@ -442,14 +606,14 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         assertEqDecimal(position.protocolFees, 2.103202e6, quoteDecimals, "fees");
 
         // Reduce position
+        int256 collateral = -100e6; // Withdraw some of the proceeds of the reduction
         ModifyCostParams memory modifyParams = ModifyCostParams({
             positionId: positionId,
             quantity: -0.25 ether,
-            collateral: -100e6, // Withdraw some of the proceeds of the reduction
             collateralSlippage: collateralSlippage,
             uniswapFee: uniswapFee
         });
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(modifyParams, collateral);
         assertEqDecimal(result.spotCost, 174.75e6, quoteDecimals, "spotCost");
         assertEqDecimal(result.collateralUsed, -100e6, quoteDecimals, "collateralUsed");
         assertEqDecimal(result.cost, 171.976519e6, quoteDecimals, "cost");
@@ -485,11 +649,11 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         ModifyCostParams memory modifyParams = ModifyCostParams({
             positionId: positionId,
             quantity: -0.25 ether,
-            collateral: type(int256).min,
             collateralSlippage: collateralSlippage,
             uniswapFee: uniswapFee
         });
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
+        ModifyCostResult memory result =
+            contangoQuoter.modifyCostForPositionWithCollateral(modifyParams, type(int256).min);
 
         uint256 expectedCostAfterDecrease = ((positionBefore.openCost * 0.875e3) / 1e3) + uint256(result.financingCost);
 
@@ -518,8 +682,8 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         assertApproxEqAbsDecimal(position.collateral, 797.896798e6, costBuffer, quoteDecimals, "collateral");
 
         // Reduce position
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(
-            ModifyCostParams(positionId, -1.25 ether, 0, collateralSlippage, uniswapFee)
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(
+            ModifyCostParams(positionId, -1.25 ether, collateralSlippage, uniswapFee), 0
         );
         assertLtDecimal(result.maxCollateral, 0, quoteDecimals, "excessQuote");
 
@@ -546,11 +710,10 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         ModifyCostParams memory modifyParams = ModifyCostParams({
             positionId: positionId,
             quantity: -0.25 ether,
-            collateral: 100e6,
             collateralSlippage: collateralSlippage,
             uniswapFee: uniswapFee
         });
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(modifyParams, 100e6);
         assertEqDecimal(result.collateralUsed, 100e6, quoteDecimals, "collateralUsed");
         assertEqDecimal(result.cost, 192.970994e6, quoteDecimals, "cost");
 
@@ -592,11 +755,10 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         ModifyCostParams memory modifyParams = ModifyCostParams({
             positionId: positionId,
             quantity: -0.25 ether,
-            collateral: 0,
             collateralSlippage: collateralSlippage,
             uniswapFee: uniswapFee
         });
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(modifyParams, 0);
 
         int256 collateral = result.maxCollateral + 1e6;
         dealAndApprove(address(quote), trader, uint256(collateral), address(contango));
@@ -629,11 +791,10 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         ModifyCostParams memory modifyParams = ModifyCostParams({
             positionId: positionId,
             quantity: 0.25 ether,
-            collateral: 0,
             collateralSlippage: collateralSlippage,
             uniswapFee: uniswapFee
         });
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(modifyParams, 0);
 
         assertEq(result.collateralUsed, 0, "collateralUsed");
 
@@ -665,11 +826,10 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         ModifyCostParams memory modifyParams = ModifyCostParams({
             positionId: positionId,
             quantity: 0.25 ether,
-            collateral: 100e6,
             collateralSlippage: collateralSlippage,
             uniswapFee: uniswapFee
         });
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(modifyParams, 100e6);
 
         dealAndApprove(address(USDC), trader, uint256(result.collateralUsed), address(contango));
         _modifyPosition(positionId, modifyParams.quantity, result);
@@ -694,11 +854,10 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         ModifyCostParams memory modifyParams = ModifyCostParams({
             positionId: positionId,
             quantity: 0.25 ether,
-            collateral: 10000e6,
             collateralSlippage: collateralSlippage,
             uniswapFee: uniswapFee
         });
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(modifyParams, 10000e6);
 
         assertEqDecimal(result.collateralUsed, result.maxCollateral, quoteDecimals, "collateral");
 
@@ -731,8 +890,8 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
     function testOpenPositionOnBehalfOfSomeoneElse() public {
         address proxy = address(0x99);
 
-        ModifyCostResult memory result = contangoQuoter.openingCostForPosition(
-            OpeningCostParams(symbol, 2 ether, 800e6, collateralSlippage, uniswapFee)
+        ModifyCostResult memory result = contangoQuoter.openingCostForPositionWithCollateral(
+            OpeningCostParams(symbol, 2 ether, collateralSlippage, uniswapFee), 800e6
         );
 
         dealAndApprove(address(quote), proxy, result.collateralUsed.toUint256(), address(contango));
@@ -773,15 +932,15 @@ abstract contract PositionActionsETHUSDCFixtures is PriceStubFixtures, PositionF
         ModifyCostParams memory modifyParams = ModifyCostParams({
             positionId: positionId,
             quantity: 0.25 ether,
-            collateral: -10_000e6,
             collateralSlippage: collateralSlippage,
             uniswapFee: uniswapFee
         });
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(modifyParams);
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(modifyParams, -10_000e6);
         // Deal with subtle precision issues right at the edge
         uint256 collateralBuffer = 4;
-        modifyParams.collateral = result.collateralUsed + int256(collateralBuffer);
-        result = contangoQuoter.modifyCostForPosition(modifyParams);
+        result = contangoQuoter.modifyCostForPositionWithCollateral(
+            modifyParams, result.collateralUsed + int256(collateralBuffer)
+        );
 
         _modifyPosition(positionId, modifyParams.quantity, result);
 

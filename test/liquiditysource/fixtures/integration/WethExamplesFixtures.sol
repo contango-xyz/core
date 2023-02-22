@@ -14,8 +14,8 @@ abstract contract WethExamplesETHQuoteFixtures is PositionFixtures {
     // ==============================================
 
     function _testCreatePosition(uint256 quantity, uint256 collateral) internal {
-        ModifyCostResult memory openingCostResult = contangoQuoter.openingCostForPosition(
-            OpeningCostParams(symbol, quantity, collateral, collateralSlippage, uniswapFee)
+        ModifyCostResult memory openingCostResult = contangoQuoter.openingCostForPositionWithCollateral(
+            OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee), collateral
         );
 
         bytes[] memory calls = new bytes[](2);
@@ -47,8 +47,8 @@ abstract contract WethExamplesETHQuoteFixtures is PositionFixtures {
     function _testOpenPositionOnBehalfOfSomeoneElse(uint256 quantity, uint256 collateral) internal {
         address proxy = address(0x99);
 
-        ModifyCostResult memory openingCostResult = contangoQuoter.openingCostForPosition(
-            OpeningCostParams(symbol, quantity, collateral, collateralSlippage, uniswapFee)
+        ModifyCostResult memory openingCostResult = contangoQuoter.openingCostForPositionWithCollateral(
+            OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee), collateral
         );
 
         bytes[] memory calls = new bytes[](2);
@@ -78,10 +78,10 @@ abstract contract WethExamplesETHQuoteFixtures is PositionFixtures {
     }
 
     function _testCreateFullCollateralisedPosition(uint256 quantity) internal {
-        OpeningCostParams memory params = OpeningCostParams(symbol, quantity, 0, collateralSlippage, uniswapFee);
-        ModifyCostResult memory openingCostResult = contangoQuoter.openingCostForPosition(params);
-        params.collateral = openingCostResult.maxCollateral.toUint256();
-        openingCostResult = contangoQuoter.openingCostForPosition(params);
+        OpeningCostParams memory params = OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee);
+        ModifyCostResult memory openingCostResult = contangoQuoter.openingCostForPositionWithCollateral(params, 0);
+        openingCostResult =
+            contangoQuoter.openingCostForPositionWithCollateral(params, openingCostResult.maxCollateral.toUint256());
 
         bytes[] memory calls = new bytes[](3);
         calls[0] = abi.encodeWithSelector(contango.wrapETH.selector);
@@ -118,8 +118,8 @@ abstract contract WethExamplesETHQuoteFixtures is PositionFixtures {
     function _testIncreasePosition(uint256 quantity, uint256 increaseQuantity) internal {
         (PositionId positionId,) = _openPosition(quantity);
 
-        ModifyCostResult memory increasingCostResult = contangoQuoter.modifyCostForPosition(
-            ModifyCostParams(positionId, int256(increaseQuantity), 0, collateralSlippage, uniswapFee)
+        ModifyCostResult memory increasingCostResult = contangoQuoter.modifyCostForPositionWithCollateral(
+            ModifyCostParams(positionId, int256(increaseQuantity), collateralSlippage, uniswapFee), 0
         );
 
         bytes[] memory calls = new bytes[](2);
@@ -153,14 +153,14 @@ abstract contract WethExamplesETHQuoteFixtures is PositionFixtures {
     {
         (PositionId positionId,) = _openPosition(quantity);
 
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(
             ModifyCostParams({
                 positionId: positionId,
                 quantity: int256(increaseQuantity),
-                collateral: int256(collateral),
                 collateralSlippage: collateralSlippage,
                 uniswapFee: uniswapFee
-            })
+            }),
+            int256(collateral)
         );
 
         uint256 cost = (result.cost + result.financingCost).slippage();
@@ -226,8 +226,8 @@ abstract contract WethExamplesETHQuoteFixtures is PositionFixtures {
     function _testDecreasePosition(uint256 quantity, int256 decreaseQuantity) internal {
         (PositionId positionId,) = _openPosition(quantity);
 
-        ModifyCostResult memory modifyCostResult = contangoQuoter.modifyCostForPosition(
-            ModifyCostParams(positionId, decreaseQuantity, 0, collateralSlippage, uniswapFee)
+        ModifyCostResult memory modifyCostResult = contangoQuoter.modifyCostForPositionWithCollateral(
+            ModifyCostParams(positionId, decreaseQuantity, collateralSlippage, uniswapFee), 0
         );
 
         bytes[] memory calls = new bytes[](2);
@@ -259,8 +259,8 @@ abstract contract WethExamplesETHQuoteFixtures is PositionFixtures {
     function _testFullyClosePosition(int256 quantity) internal {
         (PositionId positionId, ModifyCostResult memory openPositionResult) = _openPosition(quantity.abs());
 
-        ModifyCostResult memory modifyCostResult = contangoQuoter.modifyCostForPosition(
-            ModifyCostParams(positionId, quantity, 0, collateralSlippage, uniswapFee)
+        ModifyCostResult memory modifyCostResult = contangoQuoter.modifyCostForPositionWithCollateral(
+            ModifyCostParams(positionId, quantity, collateralSlippage, uniswapFee), 0
         );
 
         Position memory position = contango.position(positionId);
@@ -307,14 +307,14 @@ abstract contract WethExamplesETHQuoteFixtures is PositionFixtures {
         // clear balance to make assertions easier
         clearBalanceETH(trader);
 
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(
             ModifyCostParams({
                 positionId: positionId,
                 quantity: decreaseQuantity,
-                collateral: 0,
                 collateralSlippage: collateralSlippage,
                 uniswapFee: uniswapFee
-            })
+            }),
+            0
         );
 
         // Negative collateralUsed means that quantity MUST be withdrawn
@@ -362,14 +362,14 @@ abstract contract WethExamplesETHQuoteFixtures is PositionFixtures {
     function _testRemoveCollateral(uint256 quantity, int256 collateralToRemove) internal {
         (PositionId positionId,) = _openPosition(quantity);
 
-        ModifyCostResult memory result = contangoQuoter.modifyCostForPosition(
+        ModifyCostResult memory result = contangoQuoter.modifyCostForPositionWithCollateral(
             ModifyCostParams({
                 positionId: positionId,
                 quantity: 0,
-                collateral: collateralToRemove,
                 collateralSlippage: collateralSlippage,
                 uniswapFee: uniswapFee
-            })
+            }),
+            collateralToRemove
         );
 
         bytes[] memory calls = new bytes[](2);
@@ -421,7 +421,7 @@ abstract contract WethExamplesETHBaseFixtures is PositionFixtures {
         Position memory position = contango.position(positionId);
 
         // When
-        vm.warp(instrument.maturity);
+        vm.warp(maturity);
 
         uint256 deliveryCost = contangoQuoter.deliveryCostForPosition(positionId);
         dealAndApprove(address(quote), trader, deliveryCost, address(contango));

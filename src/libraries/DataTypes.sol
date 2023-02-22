@@ -29,28 +29,16 @@ struct Fill {
     int256 collateral; // Amount of collateral added/removed by this fill
 }
 
-struct Instrument {
-    //>slot0: 216bits used - 40bits left
-    uint32 maturity;
-    // This value used to be stored, but now is passed as param. It can't be removed cause of the existent data in the contract
-    // So to also avoid a major refactor is used as a transient value, i.e. it's set after the struct is loaded using the user provided value
-    uint24 uniswapFeeTransient;
-    ERC20 base;
-    bool closingOnly;
-    //>slot1: 160bits used - 96bits left
-    ERC20 quote;
-}
-
 struct YieldInstrument {
-    //>slot0: 256bits used
+    uint32 maturity;
+    bool closingOnly;
     bytes6 baseId;
-    bytes6 quoteId;
-    IFYToken quoteFyToken;
-    //>slot1: 160bits used - 96bits left
+    ERC20 base;
     IFYToken baseFyToken;
-    //>slot2: 160bits used - 96bits left
     IPool basePool;
-    //>slot3: 256bits used
+    bytes6 quoteId;
+    ERC20 quote;
+    IFYToken quoteFyToken;
     IPool quotePool;
     uint96 minQuoteDebt;
 }

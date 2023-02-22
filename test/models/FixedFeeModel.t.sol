@@ -10,6 +10,18 @@ contract FixedFeeModelTest is Test {
 
     FixedFeeModel private sut;
 
+    function testAboveMaxFeeRevert(uint256 fee) public {
+        fee = bound(fee, MAX_FIXED_FEE + 1, type(uint256).max);
+        vm.expectRevert(abi.encodeWithSelector(FixedFeeModel.AboveMaxFee.selector, fee));
+        sut = new FixedFeeModel(fee);
+    }
+
+    function testBelowMinFeeRevert(uint256 fee) public {
+        fee = bound(fee, 0, MIN_FIXED_FEE - 1);
+        vm.expectRevert(abi.encodeWithSelector(FixedFeeModel.BelowMinFee.selector, fee));
+        sut = new FixedFeeModel(fee);
+    }
+
     function testCalculateFees() public {
         // given
         uint256 feeRate = 0.0015e18;
@@ -55,7 +67,9 @@ contract FixedFeeModelTest is Test {
         assertEq(expectedFees, actualFees);
     }
 
-    function testCalculateFeeFuzzInput(uint64 feeRate, address trader, PositionId positionId, uint128 cost) public {
+    function testCalculateFeeFuzzInput(uint256 feeRate, address trader, PositionId positionId, uint128 cost) public {
+        feeRate = bound(feeRate, MIN_FIXED_FEE, MAX_FIXED_FEE);
+
         // given
         vm.assume(cost != 0);
 

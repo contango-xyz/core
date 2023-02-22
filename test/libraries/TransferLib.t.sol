@@ -47,23 +47,23 @@ contract TransferLibTest is Test {
         assertEq(token.balanceOf(to), amount);
     }
 
-    function testTransferOutPayerZeroAddressErro(uint256 amount) public {
+    function testTransferOutPayerZeroAddressError(uint256 amount) public {
         // given
         address to = utils.getNextUserAddress("to");
 
         // expect
-        vm.expectRevert(abi.encodeWithSelector(TransferLib.ZeroAddress.selector, address(0), to));
+        vm.expectRevert(TransferLib.ZeroPayer.selector);
 
         // when
         TransferLib.transferOut(token, address(0), to, amount);
     }
 
-    function testTransferOutToZeroAddressErro(uint256 amount) public {
+    function testTransferOutToZeroAddressError(uint256 amount) public {
         // given
         address payer = utils.getNextUserAddress("payer");
 
         // expect
-        vm.expectRevert(abi.encodeWithSelector(TransferLib.ZeroAddress.selector, payer, address(0)));
+        vm.expectRevert(TransferLib.ZeroDestination.selector);
 
         // when
         TransferLib.transferOut(token, payer, address(0), amount);

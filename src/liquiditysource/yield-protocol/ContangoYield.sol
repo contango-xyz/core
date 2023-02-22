@@ -5,13 +5,17 @@ import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "solmate/src/tokens/WETH.sol";
 import {IContangoLadle} from "@yield-protocol/vault-v2/contracts/other/contango/interfaces/IContangoLadle.sol";
 import "@yield-protocol/vault-v2/contracts/other/contango/interfaces/IContangoWitchListener.sol";
+
+import "./interfaces/IContangoYield.sol";
+import "./interfaces/IContangoYieldAdmin.sol";
 import "./Yield.sol";
 import "./YieldUtils.sol";
+
 import "../ContangoBase.sol";
 
 /// @notice Contract that acts as the main entry point to the protocol with yield-protocol as the underlying
 /// @dev This is the main entry point to the system when using yield-protocol as the underlying
-contract ContangoYield is ContangoBase, IContangoWitchListener {
+contract ContangoYield is ContangoBase, IContangoWitchListener, IContangoYield, IContangoYieldAdmin {
     using SafeCast for uint256;
     using YieldUtils for Symbol;
 
@@ -27,7 +31,11 @@ contract ContangoYield is ContangoBase, IContangoWitchListener {
         __ContangoBase_init(_positionNFT, _treasury);
 
         YieldStorageLib.setLadle(_ladle);
-        YieldStorageLib.setCauldron(_ladle.cauldron());
+        emit LadleSet(_ladle);
+
+        ICauldron cauldron = _ladle.cauldron();
+        YieldStorageLib.setCauldron(cauldron);
+        emit CauldronSet(cauldron);
     }
 
     // ============================================== Trading functions ==============================================
@@ -114,15 +122,121 @@ contract ContangoYield is ContangoBase, IContangoWitchListener {
 
     // ============================================== Yield specific functions ==============================================
 
-    function createYieldInstrument(Symbol _symbol, bytes6 _baseId, bytes6 _quoteId, IFeeModel _feeModel)
+    function createYieldInstrumentV2(Symbol _symbol, bytes6 _baseId, bytes6 _quoteId, IFeeModel _feeModel)
         external
+        override
         onlyRole(DEFAULT_ADMIN_ROLE)
-        returns (Instrument memory, YieldInstrument memory)
+        returns (YieldInstrument memory instrument)
     {
-        return YieldStorageLib.createInstrument(_symbol, _baseId, _quoteId, _feeModel);
+        ICauldron cauldron = YieldStorageLib.getCauldron();
+        (DataTypes.Series memory baseSeries, DataTypes.Series memory quoteSeries) =
+            _validInstrumentData(cauldron, _symbol, _baseId, _quoteId);
+
+        StorageLib.getInstrumentFeeModel()[_symbol] = _feeModel;
+        IContangoLadle ladle = YieldStorageLib.getLadle();
+
+        (InstrumentStorage memory instrumentStorage, YieldInstrumentStorage memory yieldInstrumentStorage) =
+            _createInstrument(ladle, cauldron, _baseId, _quoteId, baseSeries, quoteSeries);
+
+        YieldStorageLib.getJoins()[yieldInstrumentStorage.baseId] = address(ladle.joins(yieldInstrumentStorage.baseId));
+        YieldStorageLib.getJoins()[yieldInstrumentStorage.quoteId] =
+            address(ladle.joins(yieldInstrumentStorage.quoteId));
+
+        StorageLib.getInstruments()[_symbol] = instrumentStorage;
+        YieldStorageLib.getInstruments()[_symbol] = yieldInstrumentStorage;
+
+        instrument = _yieldInstrument(instrumentStorage, yieldInstrumentStorage);
+        emitInstrumentCreatedEvent(_symbol, instrument);
     }
 
-    function yieldInstrument(Symbol symbol) external view returns (Instrument memory, YieldInstrument memory) {
-        return symbol.loadInstrument();
+    function _yieldInstrument(
+        InstrumentStorage memory instrumentStorage,
+        YieldInstrumentStorage memory yieldInstrumentStorage
+    ) private pure returns (YieldInstrument memory) {
+        return YieldInstrument({
+            maturity: instrumentStorage.maturity,
+            closingOnly: instrumentStorage.closingOnly,
+            base: instrumentStorage.base,
+            baseId: yieldInstrumentStorage.baseId,
+            baseFyToken: yieldInstrumentStorage.baseFyToken,
+            basePool: yieldInstrumentStorage.basePool,
+            quote: instrumentStorage.quote,
+            quoteId: yieldInstrumentStorage.quoteId,
+            quoteFyToken: yieldInstrumentStorage.quoteFyToken,
+            quotePool: yieldInstrumentStorage.quotePool,
+            minQuoteDebt: yieldInstrumentStorage.minQuoteDebt
+        });
+    }
+
+    function emitInstrumentCreatedEvent(Symbol symbol, YieldInstrument memory instrument) private {
+        emit YieldInstrumentCreatedV2({
+            symbol: symbol,
+            maturity: instrument.maturity,
+            baseId: instrument.baseId,
+            base: instrument.base,
+            baseFyToken: instrument.baseFyToken,
+            quoteId: instrument.quoteId,
+            quote: instrument.quote,
+            quoteFyToken: instrument.quoteFyToken,
+            basePool: instrument.basePool,
+            quotePool: instrument.quotePool
+        });
+    }
+
+    function _createInstrument(
+        IContangoLadle ladle,
+        ICauldron cauldron,
+        bytes6 baseId,
+        bytes6 quoteId,
+        DataTypes.Series memory baseSeries,
+        DataTypes.Series memory quoteSeries
+    ) private view returns (InstrumentStorage memory instrument_, YieldInstrumentStorage memory yieldInstrument_) {
+        yieldInstrument_.baseId = baseId;
+        yieldInstrument_.quoteId = quoteId;
+
+        yieldInstrument_.basePool = IPool(ladle.pools(yieldInstrument_.baseId));
+        yieldInstrument_.quotePool = IPool(ladle.pools(yieldInstrument_.quoteId));
+
+        yieldInstrument_.baseFyToken = baseSeries.fyToken;
+        yieldInstrument_.quoteFyToken = quoteSeries.fyToken;
+
+        DataTypes.Debt memory debt = cauldron.debt(quoteSeries.baseId, yieldInstrument_.baseId);
+        yieldInstrument_.minQuoteDebt = debt.min * uint96(10) ** debt.dec;
+
+        instrument_.maturity = baseSeries.maturity;
+        instrument_.base = ERC20(yieldInstrument_.baseFyToken.underlying());
+        instrument_.quote = ERC20(yieldInstrument_.quoteFyToken.underlying());
+    }
+
+    function _validInstrumentData(ICauldron cauldron, Symbol symbol, bytes6 baseId, bytes6 quoteId)
+        private
+        view
+        returns (DataTypes.Series memory baseSeries, DataTypes.Series memory quoteSeries)
+    {
+        if (StorageLib.getInstruments()[symbol].maturity != 0) {
+            revert InstrumentAlreadyExists(symbol);
+        }
+
+        baseSeries = cauldron.series(baseId);
+        uint256 baseMaturity = baseSeries.maturity;
+        if (baseMaturity == 0 || baseMaturity > type(uint32).max) {
+            revert InvalidBaseId(symbol, baseId);
+        }
+
+        quoteSeries = cauldron.series(quoteId);
+        uint256 quoteMaturity = quoteSeries.maturity;
+        if (quoteMaturity == 0 || quoteMaturity > type(uint32).max) {
+            revert InvalidQuoteId(symbol, quoteId);
+        }
+
+        if (baseMaturity != quoteMaturity) {
+            revert MismatchedMaturity(symbol, baseId, baseMaturity, quoteId, quoteMaturity);
+        }
+    }
+
+    function yieldInstrumentV2(Symbol symbol) external view override returns (YieldInstrument memory) {
+        (InstrumentStorage memory instrumentStorage, YieldInstrumentStorage memory yieldInstrumentStorage) =
+            symbol.loadInstrument();
+        return _yieldInstrument(instrumentStorage, yieldInstrumentStorage);
     }
 }

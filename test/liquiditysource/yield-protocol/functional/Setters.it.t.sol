@@ -12,8 +12,6 @@ contract YieldSettersTest is
     SettersFixtures,
     WithYieldFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212)
 {
-    event YieldInstrumentCreated(Instrument instrument, YieldInstrument yieldInstrument);
-
     function setUp() public override(WithYieldFixtures, ContangoTestBase) {
         super.setUp();
     }
@@ -27,42 +25,37 @@ contract YieldSettersTest is
 
         // expect
         vm.expectEmit(true, true, true, true);
-        emit YieldInstrumentCreated(
-            Instrument({
-                maturity: uint32(constants.MATURITY_2212),
-                uniswapFeeTransient: 0,
-                base: WETH9,
-                quote: DAI,
-                closingOnly: false
-            }),
-            YieldInstrument({
-                baseFyToken: IFYToken(expectedBaseFyToken),
-                baseId: constants.FYETH2212,
-                basePool: IPool(expectedBasePool),
-                quoteFyToken: IFYToken(expectedQuoteFyToken),
-                quoteId: constants.FYDAI2212,
-                quotePool: IPool(expectedQuotePool),
-                minQuoteDebt: 40e18
-            })
-            );
+        emit YieldInstrumentCreatedV2({
+            symbol: Symbol.wrap("yETHDAI2212_2"),
+            maturity: uint32(constants.MATURITY_2212),
+            base: WETH9,
+            quote: DAI,
+            baseFyToken: IFYToken(expectedBaseFyToken),
+            baseId: constants.FYETH2212,
+            basePool: IPool(expectedBasePool),
+            quoteFyToken: IFYToken(expectedQuoteFyToken),
+            quoteId: constants.FYDAI2212,
+            quotePool: IPool(expectedQuotePool)
+        });
 
         // when
         vm.prank(contangoTimelock);
-        (Instrument memory newInstrument, YieldInstrument memory newYieldInstrument) = contangoYield
-            .createYieldInstrument(Symbol.wrap("yETHDAI2212_2"), constants.FYETH2212, constants.FYDAI2212, feeModel);
+        YieldInstrument memory newInstrument = contangoYield.createYieldInstrumentV2(
+            Symbol.wrap("yETHDAI2212_2"), constants.FYETH2212, constants.FYDAI2212, feeModel
+        );
 
         assertEq(address(newInstrument.base), address(WETH9), "base");
-        assertEq(address(newYieldInstrument.baseFyToken), expectedBaseFyToken, "baseFyToken");
-        assertEq(newYieldInstrument.baseId, constants.FYETH2212, "baseId");
-        assertEq(address(newYieldInstrument.basePool), expectedBasePool, "basePool");
+        assertEq(address(newInstrument.baseFyToken), expectedBaseFyToken, "baseFyToken");
+        assertEq(newInstrument.baseId, constants.FYETH2212, "baseId");
+        assertEq(address(newInstrument.basePool), expectedBasePool, "basePool");
 
         assertEq(address(newInstrument.quote), address(DAI), "quote");
-        assertEq(address(newYieldInstrument.quoteFyToken), expectedQuoteFyToken, "quoteFyToken");
-        assertEq(newYieldInstrument.quoteId, constants.FYDAI2212, "quoteId");
-        assertEq(address(newYieldInstrument.quotePool), expectedQuotePool, "quotePool");
+        assertEq(address(newInstrument.quoteFyToken), expectedQuoteFyToken, "quoteFyToken");
+        assertEq(newInstrument.quoteId, constants.FYDAI2212, "quoteId");
+        assertEq(address(newInstrument.quotePool), expectedQuotePool, "quotePool");
 
         assertEq(newInstrument.maturity, uint32(constants.MATURITY_2212), "maturity");
-        assertEq(newInstrument.uniswapFeeTransient, 0, "uniswapFee");
-        assertEqDecimal(newYieldInstrument.minQuoteDebt, 40e18, 18, "minQuoteDebt");
+        assertFalse(newInstrument.closingOnly, "closingOnly");
+        assertEqDecimal(newInstrument.minQuoteDebt, 40e18, 18, "minQuoteDebt");
     }
 }

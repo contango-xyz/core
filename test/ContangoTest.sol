@@ -49,7 +49,7 @@ abstract contract ContangoTest is ContangoTestBase {
     {
         uint8 decimals = ChainlinkAggregatorV2V3Mock(chainlinkAggregator).decimals();
         if (!stubbedAddresses[chainlinkAggregator]) {
-            vm.etch(chainlinkAggregator, getCode(address(new ChainlinkAggregatorV2V3Mock(decimals, priceDecimals))));
+            vm.etch(chainlinkAggregator, address(new ChainlinkAggregatorV2V3Mock(decimals, priceDecimals)).code);
             stubbedAddresses[chainlinkAggregator] = true;
         }
 
@@ -92,37 +92,17 @@ abstract contract ContangoTest is ContangoTestBase {
     function _stubUniswapPool(StubUniswapPoolParams memory params) private {
         vm.etch(
             params.poolAddress,
-            getCode(
-                address(
-                    new UniswapPoolStub({
+            address(
+                new UniswapPoolStub({
                         _token0: params.token0,
                         _token1: params.token1,
                         _token0Oracle: params.token0Oracle,
                         _token1Oracle: params.token1Oracle,
                         _token0Quoted: params.token0Quoted,
                         _absoluteSpread: params.spread})
-                )
-            )
+            ).code
         );
         stubbedAddresses[params.poolAddress] = true;
         vm.label(params.poolAddress, "UniswapPoolStub");
-    }
-
-    // solhint-disable-next-line var-name-mixedcase
-    function getCode(address who) internal view returns (bytes memory o_code) {
-        // solhint-disable-next-line no-inline-assembly
-        assembly {
-            // retrieve the size of the code, this needs assembly
-            let size := extcodesize(who)
-            // allocate output byte array - this could also be done without assembly
-            // by using o_code = new bytes(size)
-            o_code := mload(0x40)
-            // new "memory end" including padding
-            mstore(0x40, add(o_code, and(add(add(size, 0x20), 0x1f), not(0x1f))))
-            // store length in memory
-            mstore(o_code, size)
-            // actually retrieve the code, this needs assembly
-            extcodecopy(who, add(o_code, 0x20), 0, size)
-        }
     }
 }

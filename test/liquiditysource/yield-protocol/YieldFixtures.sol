@@ -14,7 +14,7 @@ abstract contract YieldFixtures is WithYieldProtocol, PositionFixtures {
     using YieldUtils for PositionId;
     using TestUtils for *;
 
-    YieldInstrument internal yieldInstrument;
+    YieldInstrument internal instrument;
 
     bool internal addLiquidity = false;
 
@@ -25,7 +25,7 @@ abstract contract YieldFixtures is WithYieldProtocol, PositionFixtures {
 
     function setUp() public virtual override(WithYieldProtocol, ContangoTestBase) {
         super.setUp();
-        (instrument, yieldInstrument) = contangoYield.yieldInstrument(symbol);
+        instrument = contangoYield.yieldInstrumentV2(symbol);
         feeModel = contango.feeModel(symbol);
         vm.label(address(feeModel), "FeeModel");
 
@@ -33,6 +33,7 @@ abstract contract YieldFixtures is WithYieldProtocol, PositionFixtures {
         quoteDecimals = quote.decimals();
         base = instrument.base;
         baseDecimals = base.decimals();
+        maturity = instrument.maturity;
         costBuffer = Yield.BORROWING_BUFFER;
 
         // catch all maxQuoteDust double the borrowing buffer (create + modification) of quote precision up to precision of 8
@@ -40,22 +41,23 @@ abstract contract YieldFixtures is WithYieldProtocol, PositionFixtures {
         if (quoteDecimals > 8) {
             maxQuoteDust = maxQuoteDust * (10 ** (quoteDecimals - 8));
         }
+        maxBaseDust = 1;
 
         if (addLiquidity) {
             if (base == USDC) {
-                _provideLiquidity(yieldInstrument.basePool, 1_000_000e6);
+                _provideLiquidity(instrument.basePool, 1_000_000e6);
             } else if (base == DAI) {
-                _provideLiquidity(yieldInstrument.basePool, 1_000_000e18);
+                _provideLiquidity(instrument.basePool, 1_000_000e18);
             } else if (base == WETH9) {
-                _provideLiquidity(yieldInstrument.basePool, 1_000 ether);
+                _provideLiquidity(instrument.basePool, 1_000 ether);
             }
 
             if (quote == USDC) {
-                _provideLiquidity(yieldInstrument.quotePool, 1_000_000e6);
+                _provideLiquidity(instrument.quotePool, 1_000_000e6);
             } else if (quote == DAI) {
-                _provideLiquidity(yieldInstrument.quotePool, 1_000_000e18);
+                _provideLiquidity(instrument.quotePool, 1_000_000e18);
             } else if (quote == WETH9) {
-                _provideLiquidity(yieldInstrument.quotePool, 1_000 ether);
+                _provideLiquidity(instrument.quotePool, 1_000 ether);
             }
         }
     }

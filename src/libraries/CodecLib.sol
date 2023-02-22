@@ -6,22 +6,21 @@ library CodecLib {
     error InvalidUInt128(uint256 n);
 
     modifier validInt128(int256 n) {
-        if (n > type(int128).max || n < type(int128).min) {
+        if (int128(n) != n) {
             revert InvalidInt128(n);
         }
         _;
     }
 
     modifier validUInt128(uint256 n) {
-        if (n > type(uint128).max) {
+        if (uint128(n) != n) {
             revert InvalidUInt128(n);
         }
         _;
     }
 
     function encodeU128(uint256 a, uint256 b) internal pure validUInt128(a) validUInt128(b) returns (uint256 encoded) {
-        encoded |= uint256(uint128(a)) << 128;
-        encoded |= uint256(uint128(b));
+        encoded = a << 128 | b;
     }
 
     function decodeU128(uint256 encoded) internal pure returns (uint128 a, uint128 b) {
@@ -30,8 +29,7 @@ library CodecLib {
     }
 
     function encodeI128(int256 a, int256 b) internal pure validInt128(a) validInt128(b) returns (uint256 encoded) {
-        encoded |= uint256(uint128(int128(a))) << 128;
-        encoded |= uint256(uint128(int128(b)));
+        encoded = uint256(a) << 128 | uint128(int128(b));
     }
 
     function decodeI128(uint256 encoded) internal pure returns (int128 a, int128 b) {

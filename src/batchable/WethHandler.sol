@@ -3,11 +3,11 @@ pragma solidity 0.8.17;
 
 import "solmate/src/tokens/WETH.sol";
 import "solmate/src/utils/SafeTransferLib.sol";
+import "../libraries/Errors.sol";
 
 abstract contract WethHandler {
     using SafeTransferLib for address payable;
 
-    error OnlyFromWETH(address weth, address sender);
     error NothingToWrap();
 
     WETH public immutable weth;
@@ -36,7 +36,7 @@ abstract contract WethHandler {
     /// @dev `weth.withdraw` will send ether using this function.
     receive() external payable virtual {
         if (msg.sender != address(weth)) {
-            revert OnlyFromWETH(address(weth), msg.sender);
+            revert OnlyFromWETH(msg.sender);
         }
     }
 }

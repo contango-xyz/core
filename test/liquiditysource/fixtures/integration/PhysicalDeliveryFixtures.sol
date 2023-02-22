@@ -15,7 +15,7 @@ abstract contract PhysicalDeliveryFixtures is PositionFixtures {
         (PositionId positionId,) = _openPosition(quantity);
 
         // When
-        vm.warp(instrument.maturity);
+        vm.warp(maturity);
         _onWarpToMaturity();
 
         // Then
@@ -33,7 +33,7 @@ abstract contract PhysicalDeliveryFixtures is PositionFixtures {
         (PositionId joePositionId,) = _openPosition(traderJoe, quantity);
 
         // When
-        vm.warp(instrument.maturity);
+        vm.warp(maturity);
         _onWarpToMaturity();
 
         // Then
