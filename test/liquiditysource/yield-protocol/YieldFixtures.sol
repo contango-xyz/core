@@ -7,6 +7,7 @@ import "./WithYieldProtocol.sol";
 import "../fixtures/PositionFixtures.sol";
 
 import "src/liquiditysource/yield-protocol/Yield.sol";
+import "src/models/FixedFeeModel.sol";
 import {IPoolStub} from "../../stub/IPoolStub.sol";
 
 // solhint-disable no-empty-blocks
@@ -25,8 +26,13 @@ abstract contract YieldFixtures is WithYieldProtocol, PositionFixtures {
 
     function setUp() public virtual override(WithYieldProtocol, ContangoTestBase) {
         super.setUp();
+        // Re-enable fees
+        if (address(feeModel) == address(0)) {
+            feeModel = new FixedFeeModel(0.0015e18);
+        }
+        vm.prank(contangoTimelock);
+        contango.setFeeModel(symbol, feeModel);
         instrument = contangoYield.yieldInstrumentV2(symbol);
-        feeModel = contango.feeModel(symbol);
         vm.label(address(feeModel), "FeeModel");
 
         quote = instrument.quote;
@@ -35,6 +41,7 @@ abstract contract YieldFixtures is WithYieldProtocol, PositionFixtures {
         baseDecimals = base.decimals();
         maturity = instrument.maturity;
         costBuffer = Yield.BORROWING_BUFFER;
+        leverageBuffer = 300;
 
         // catch all maxQuoteDust double the borrowing buffer (create + modification) of quote precision up to precision of 8
         maxQuoteDust = Yield.BORROWING_BUFFER * 2;

@@ -41,10 +41,6 @@ struct ModifyCostResult {
     uint256 baseLendingLiquidity; // Liquidity available for lending, either in PV or FV depending on the operation(s) quoted
     uint256 quoteLendingLiquidity; // Liquidity available for lending, either in PV or FV depending on the operation(s) quoted
     // relevant to closing only
-    bool insufficientLiquidity; // Indicates whether there is insufficient liquidity for the desired modification/open.
-    // when opening/increasing, this would mean there is insufficient borrowing liquidity of quote ccy.
-    // when closing/decreasing, this would mean there is insufficient borrowing liquidity of base ccy (unwind hedge).
-    // If this boolean is true, there is nothing we can do.
     bool needsBatchedCall;
 }
 

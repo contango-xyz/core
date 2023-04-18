@@ -3,7 +3,7 @@ pragma solidity 0.8.17;
 
 import "../interfaces/IFeeModel.sol";
 import "solmate/src/tokens/ERC20.sol";
-import {IFYToken} from "@yield-protocol/vault-v2/contracts/interfaces/IFYToken.sol";
+import {IFYToken} from "@yield-protocol/vault-v2/src/interfaces/IFYToken.sol";
 import {IPool} from "@yield-protocol/yieldspace-tv/src/interfaces/IPool.sol";
 
 type Symbol is bytes32;

@@ -86,6 +86,10 @@ abstract contract ContangoBase is
     }
 
     function setFeeModel(Symbol symbol, IFeeModel _feeModel) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        _setFeeModel(symbol, _feeModel);
+    }
+
+    function _setFeeModel(Symbol symbol, IFeeModel _feeModel) internal {
         StorageLib.setFeeModel(symbol, _feeModel);
         emit FeeModelUpdated(symbol, _feeModel);
     }

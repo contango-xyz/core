@@ -3,8 +3,8 @@ pragma solidity 0.8.17;
 
 import "@yield-protocol/yieldspace-tv/src/interfaces/IPool.sol";
 import "@yield-protocol/yieldspace-tv/src/interfaces/IMaturingToken.sol";
-import "@yield-protocol/utils-v2/contracts/token/ERC20Permit.sol";
-import "@yield-protocol/utils-v2/contracts/token/IERC20Metadata.sol";
+import "@yield-protocol/utils-v2/src/token/ERC20Permit.sol";
+import "@yield-protocol/utils-v2/src/token/IERC20Metadata.sol";
 
 contract IPoolStub is IPool, ERC20Permit {
     error NotImplemented(string f);
@@ -88,11 +88,12 @@ contract IPoolStub is IPool, ERC20Permit {
 
     error Balances(uint256 actual, uint256 cached);
 
-    function sellBase(address to, uint128 /* min */ ) external override returns (uint128 fyTokenOut) {
+    function sellBase(address to, uint128 min) external override returns (uint128 fyTokenOut) {
         uint128 _baseBalance = getBaseBalance();
         uint128 _fyTokenBalance = getFYTokenBalance();
         uint128 baseIn = _baseBalance - baseCached;
         fyTokenOut = sellBasePreview(baseIn);
+        require(fyTokenOut >= min, "too little fyToken out");
         fyToken.transfer(to, fyTokenOut);
         _update(_baseBalance, _fyTokenBalance - fyTokenOut);
     }
@@ -105,11 +106,12 @@ contract IPoolStub is IPool, ERC20Permit {
         _update(baseCached - baseOut, fyTokenCached + fyTokenIn);
     }
 
-    function sellFYToken(address to, uint128 /* min */ ) external override returns (uint128 baseOut) {
+    function sellFYToken(address to, uint128 min) external override returns (uint128 baseOut) {
         uint128 _fyTokenBalance = getFYTokenBalance();
         uint128 _baseBalance = getBaseBalance();
         uint128 fyTokenIn = _fyTokenBalance - fyTokenCached;
         baseOut = sellFYTokenPreview(fyTokenIn);
+        require(baseOut >= min, "too little base out");
         base.transfer(to, baseOut);
         _update(_baseBalance - baseOut, _fyTokenBalance);
     }

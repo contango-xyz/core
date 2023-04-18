@@ -53,8 +53,14 @@ contract ContangoPositionNFT is ERC721URIStorage, AccessControl {
      * https://eips.ethereum.org/EIPS/eip-165.
      *
      */
-    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721, AccessControl) returns (bool) {
-        return AccessControl.supportsInterface(interfaceId) || ERC721.supportsInterface(interfaceId);
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override(ERC721URIStorage, AccessControl)
+        returns (bool)
+    {
+        return AccessControl.supportsInterface(interfaceId) || ERC721URIStorage.supportsInterface(interfaceId);
     }
 
     /// @dev returns all the positions a trader has between the provided boundaries

@@ -2,6 +2,7 @@
 pragma solidity 0.8.17;
 
 import {Vm} from "forge-std/Vm.sol";
+import "src/libraries/DataTypes.sol";
 
 //common utilities for forge tests
 library Mocks {
@@ -48,12 +49,28 @@ library Mocks {
         vm.mockCall(f.address, abi.encodeWithSelector(f.selector, p1, p2, p3), abi.encode(r1, r2));
     }
 
+    function mock(
+        function(address,PositionId,uint256) external returns (uint256) f,
+        address p1,
+        PositionId p2,
+        uint256 p3,
+        uint256 r1
+    ) internal {
+        vm.mockCall(f.address, abi.encodeWithSelector(f.selector, p1, p2, p3), abi.encode(r1));
+    }
+
     function mock(function(uint128) external returns (uint128) f, uint128 p1, uint128 r1) internal {
         vm.mockCall(f.address, abi.encodeWithSelector(f.selector, p1), abi.encode(r1));
     }
 
     function mock(function() external view returns (uint128) f, uint128 r1) internal {
         vm.mockCall(f.address, abi.encodeWithSelector(f.selector), abi.encode(r1));
+    }
+
+    function mock(function(PositionId) external view returns (Position memory) f, PositionId p1, Position memory r1)
+        internal
+    {
+        vm.mockCall(f.address, abi.encodeWithSelector(f.selector, p1), abi.encode(r1));
     }
 }
 

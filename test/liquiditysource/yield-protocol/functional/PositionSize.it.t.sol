@@ -5,7 +5,7 @@ import "./WithYieldFixtures.sol";
 import {IOraclePoolStub} from "../../../stub/IOraclePoolStub.sol";
 
 contract YieldPositionSizeTest is
-    WithYieldFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212)
+    WithYieldFixtures(constants.yETHUSDC2306, constants.FYETH2306, constants.FYUSDC2306)
 {
     using SignedMath for int256;
     using SafeCast for int256;
@@ -30,15 +30,15 @@ contract YieldPositionSizeTest is
         IPoolStub(address(instrument.basePool)).setBidAsk(0.945e18, 0.955e18);
         IPoolStub(address(instrument.quotePool)).setBidAsk(0.895e6, 0.905e6);
 
-        symbol = Symbol.wrap("yETHUSDC2212-2");
+        symbol = Symbol.wrap("yETHUSDC2306-2");
         vm.prank(contangoTimelock);
-        instrument = contangoYield.createYieldInstrumentV2(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
+        instrument = contangoYield.createYieldInstrumentV2(symbol, constants.FYETH2306, constants.FYUSDC2306, feeModel);
 
         vm.startPrank(yieldTimelock);
         compositeOracle.setSource(
-            constants.FYETH2212,
+            constants.FYETH2306,
             constants.ETH_ID,
-            new IOraclePoolStub(IPoolStub(address(instrument.basePool)), constants.FYETH2212)
+            new IOraclePoolStub(IPoolStub(address(instrument.basePool)), constants.FYETH2306)
         );
         vm.stopPrank();
 
@@ -56,7 +56,7 @@ contract YieldPositionSizeTest is
         ModifyCostResult memory result = contangoQuoter.openingCostForPositionWithCollateral(params, 0);
 
         assertEqDecimal(result.spotCost, -140.1e6, 6);
-        assertEqDecimal(result.cost, -143.712225e6, 6);
+        assertEqDecimal(result.cost, -145.604115e6, 6);
 
         dealAndApprove(address(USDC), trader, result.collateralUsed.toUint256(), address(contango));
 
@@ -85,7 +85,7 @@ contract YieldPositionSizeTest is
         );
 
         vm.expectRevert(
-            abi.encodeWithSelector(PositionIsTooSmall.selector, 171.761074e6 + Yield.BORROWING_BUFFER, 200e6)
+            abi.encodeWithSelector(PositionIsTooSmall.selector, 171.932398e6 + Yield.BORROWING_BUFFER, 200e6)
         );
         vm.prank(trader);
         contango.modifyPosition(
@@ -94,7 +94,21 @@ contract YieldPositionSizeTest is
     }
 }
 
-contract YieldDebtLimitsTest is WithYieldFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212) {
+contract YieldDebtLimitsTest is WithYieldFixtures(constants.yETHUSDC2306, constants.FYETH2306, constants.FYUSDC2306) {
+    function setUp() public override {
+        super.setUp();
+
+        DataTypes.Debt memory debt = cauldron.debt({baseId: constants.USDC_ID, ilkId: constants.FYETH2306});
+        vm.prank(yieldTimelock);
+        ICauldronExt(address(cauldron)).setDebtLimits({
+            baseId: constants.USDC_ID,
+            ilkId: constants.FYETH2306,
+            max: uint96(debt.sum / 1e6) + 10_000, // Set max debt to 10.000 USDC over the current debt, so the available debt is always 10k
+            min: debt.min, // Set min debt to 100 USDC
+            dec: debt.dec
+        });
+    }
+
     function testDebtLimit() public {
         // positions borrow USDC
         DataTypes.Series memory series = cauldron.series(instrument.quoteId);

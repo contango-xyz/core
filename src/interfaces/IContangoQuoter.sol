@@ -5,6 +5,8 @@ import "../libraries/QuoterDataTypes.sol";
 
 /// @title Interface to allow for quoting position operations
 interface IContangoQuoter {
+    error InsufficientLiquidity();
+
     /// @notice Quotes the position status
     /// @param positionId The id of a position
     /// @param uniswapFee The fee (pool) to be used for the quote

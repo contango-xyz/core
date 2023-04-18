@@ -6,7 +6,7 @@ import "./WithYieldFixtures.sol";
 
 contract YieldArbitrumPhysicalDeliveryETHDAITest is
     ArbitrumPhysicalDeliveryETHDAIFixtures,
-    WithYieldFixtures(constants.yETHDAI2303, constants.FYETH2303, constants.FYDAI2303)
+    WithYieldFixtures(constants.yETHDAI2306, constants.FYETH2306, constants.FYDAI2306)
 {
     function setUp() public override(WithYieldFixtures, ContangoTestBase) {
         super.setUp();
@@ -15,7 +15,7 @@ contract YieldArbitrumPhysicalDeliveryETHDAITest is
 
 contract YieldArbitrumPhysicalDeliveryUSDCETHTest is
     ArbitrumPhysicalDeliveryUSDCETHFixtures,
-    WithYieldFixtures(constants.yUSDCETH2303, constants.FYUSDC2303, constants.FYETH2303)
+    WithYieldFixtures(constants.yUSDCETH2306, constants.FYUSDC2306, constants.FYETH2306)
 {
     function setUp() public override(WithYieldFixtures, ContangoTestBase) {
         super.setUp();
@@ -24,7 +24,16 @@ contract YieldArbitrumPhysicalDeliveryUSDCETHTest is
 
 contract YieldArbitrumPhysicalDeliveryETHUSDCTest is
     ArbitrumPhysicalDeliveryETHUSDCFixtures,
-    WithYieldFixtures(constants.yETHUSDC2303, constants.FYETH2303, constants.FYUSDC2303)
+    WithYieldFixtures(constants.yETHUSDC2306, constants.FYETH2306, constants.FYUSDC2306)
+{
+    function setUp() public override(WithYieldFixtures, ContangoTestBase) {
+        super.setUp();
+    }
+}
+
+contract YieldArbitrumPhysicalDeliveryETHUSDTTest is
+    ArbitrumPhysicalDeliveryETHUSDTFixtures,
+    WithYieldFixtures(constants.yETHUSDT2306, constants.FYETH2306, constants.FYUSDT2306)
 {
     function setUp() public override(WithYieldFixtures, ContangoTestBase) {
         super.setUp();
@@ -33,7 +42,7 @@ contract YieldArbitrumPhysicalDeliveryETHUSDCTest is
 
 contract YieldArbitrumPhysicalDeliveryDAIUSDCTest is
     ArbitrumPhysicalDeliveryDAIUSDCFixtures,
-    WithYieldFixtures(constants.yDAIUSDC2303, constants.FYDAI2303, constants.FYUSDC2303)
+    WithYieldFixtures(constants.yDAIUSDC2306, constants.FYDAI2306, constants.FYUSDC2306)
 {
     function setUp() public override(WithYieldFixtures, ContangoTestBase) {
         super.setUp();

@@ -6,7 +6,7 @@ import "./WithYieldFixtures.sol";
 
 contract YieldUpgradeabilityTest is
     UpgradeabilityFixtures,
-    WithYieldFixtures(constants.yETHDAI2212, constants.FYETH2212, constants.FYDAI2212)
+    WithYieldFixtures(constants.yETHDAI2306, constants.FYETH2306, constants.FYDAI2306)
 {
     function setUp() public override(WithYieldFixtures, ContangoTestBase) {
         super.setUp();

@@ -4,8 +4,8 @@ pragma solidity 0.8.17;
 import "./WithYieldFixtures.sol";
 import "src/dependencies/Uniswap.sol";
 
-contract YieldArbitrumPnLUSDCTest is
-    WithYieldFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212)
+contract YieldArbitrumPnLUSDC2309Test is
+    WithYieldFixtures(constants.yETHUSDC2309, constants.FYETH2309, constants.FYUSDC2309)
 {
     using SignedMath for int256;
     using SafeCast for int256;
@@ -21,7 +21,7 @@ contract YieldArbitrumPnLUSDCTest is
 
         // Move the market
         skip(4.5 days);
-        _update(instrument.basePool);
+        poolOracle.updatePool(instrument.basePool);
         skip(0.5 days);
         stubPrice({_base: WETH9, _quote: USDC, baseUsdPrice: 1500e6, quoteUsdPrice: 1e6, uniswapFee: uniswapFee});
 
@@ -34,7 +34,7 @@ contract YieldArbitrumPnLUSDCTest is
 
         // Move the market
         skip(4.5 days);
-        _update(instrument.basePool);
+        poolOracle.updatePool(instrument.basePool);
         skip(0.5 days);
         stubPrice({_base: WETH9, _quote: USDC, baseUsdPrice: 960e6, quoteUsdPrice: 1e6, uniswapFee: uniswapFee});
 
@@ -42,9 +42,29 @@ contract YieldArbitrumPnLUSDCTest is
         _closePosition(positionId);
     }
 
-    // The version of the code is different from what's deployed, so we need to hack a bit to call the old function
-    function _update(IPool pool) internal {
-        (bool success,) = address(poolOracle).call(abi.encodeWithSelector(0x1c1b8772, address(pool)));
-        assertTrue(success, "PoolOracle#update");
+    function testOpenAndCloseProfitableLongUSDT() public {
+        (PositionId positionId,) = _openPosition(2 ether);
+
+        // Move the market
+        skip(4.5 days);
+        poolOracle.updatePool(instrument.basePool);
+        skip(0.5 days);
+        stubPrice({_base: WETH9, _quote: USDT, baseUsdPrice: 1500e6, quoteUsdPrice: 1e6, uniswapFee: uniswapFee});
+
+        // Close position
+        _closePosition(positionId);
+    }
+
+    function testOpenAndCloseLossMakingLongUSDT() public {
+        (PositionId positionId,) = _openPosition(2 ether);
+
+        // Move the market
+        skip(4.5 days);
+        poolOracle.updatePool(instrument.basePool);
+        skip(0.5 days);
+        stubPrice({_base: WETH9, _quote: USDT, baseUsdPrice: 960e6, quoteUsdPrice: 1e6, uniswapFee: uniswapFee});
+
+        // Close position
+        _closePosition(positionId);
     }
 }

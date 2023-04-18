@@ -80,7 +80,7 @@ library ExecutionProcessorLib {
         delete StorageLib.getPositionNotionals()[positionId];
 
         mapping(PositionId => uint256) storage balances = StorageLib.getPositionBalances();
-        (, uint256 protocolFees) = balances[positionId].decodeU128();
+        (, uint256 protocolFees,) = _applyFees(trader, symbol, positionId, deliveryCost);
         delete balances[positionId];
 
         if (protocolFees > 0) {

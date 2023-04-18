@@ -42,22 +42,22 @@ abstract contract YieldStubFixtures is WithYieldFixtures, RatesStubFixtures, Stu
 
 abstract contract YieldStubETHUSDCFixtures is
     StubETHUSDCFixtures,
-    YieldStubFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212)
+    YieldStubFixtures(constants.yETHUSDC2306, constants.FYETH2306, constants.FYUSDC2306)
 {
     using SafeCast for uint256;
 
     function setUp() public virtual override {
         super.setUp();
 
-        symbol = Symbol.wrap("yETHUSDC2212-2");
+        symbol = Symbol.wrap("yETHUSDC2306-2");
         vm.prank(contangoTimelock);
-        instrument = contangoYield.createYieldInstrumentV2(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
+        instrument = contangoYield.createYieldInstrumentV2(symbol, constants.FYETH2306, constants.FYUSDC2306, feeModel);
 
         vm.startPrank(yieldTimelock);
         compositeOracle.setSource(
-            constants.FYETH2212,
+            constants.FYETH2306,
             constants.ETH_ID,
-            new IOraclePoolStub(IPoolStub(address(instrument.basePool)), constants.FYETH2212)
+            new IOraclePoolStub(IPoolStub(address(instrument.basePool)), constants.FYETH2306)
         );
         vm.stopPrank();
     }
@@ -74,14 +74,14 @@ abstract contract YieldStubETHUSDCFixtures is
     }
 
     function _stubDebtLimits(uint256 min, uint256 max) internal override {
-        DataTypes.Debt memory debt = cauldron.debt(constants.USDC_ID, constants.FYETH2212);
+        DataTypes.Debt memory debt = cauldron.debt(constants.USDC_ID, constants.FYETH2306);
         uint24 newMin = min > 0 ? min.toUint24() : debt.min;
         uint96 newMax = max > 0 ? max.toUint96() : debt.max;
 
         vm.prank(yieldTimelock);
         ICauldronExt(address(cauldron)).setDebtLimits({
             baseId: constants.USDC_ID,
-            ilkId: constants.FYETH2212,
+            ilkId: constants.FYETH2306,
             max: newMax,
             min: newMin,
             dec: debt.dec

@@ -82,41 +82,39 @@ abstract contract PositionFixtures is ContangoTestBase {
         internal
         returns (PositionId positionId, ModifyCostResult memory result)
     {
-        ModifyCostResult memory initialQuote = contangoQuoter.openingCostForPositionWithCollateral(
-            OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee), 0
+        result = contangoQuoter.openingCostForPositionWithLeverage(
+            OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee), 3.15e18
         );
 
-        // 10% over min
-        return _openPosition(owner, quantity, ((initialQuote.minCollateral * 1.1e1) / 1e1).toUint256());
+        positionId = _openPosition(owner, quantity, result);
     }
 
-    function _openPosition(uint256 quantity, uint256 collateral)
-        internal
-        returns (PositionId, ModifyCostResult memory)
-    {
-        return _openPosition(trader, quantity, collateral);
-    }
-
-    function _openPositionAtLeverage(uint256 quantity, uint256 leverage)
-        internal
-        returns (PositionId, ModifyCostResult memory)
-    {
-        ModifyCostResult memory _quote = contangoQuoter.openingCostForPositionWithLeverage(
-            OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee), leverage
-        );
-
-        return _openPosition(trader, quantity, _quote.collateralUsed.toUint256());
-    }
-
-    function _openPosition(address owner, uint256 quantity, uint256 collateral)
+    function _openPosition(uint256 quantity, uint256 leverage)
         internal
         returns (PositionId positionId, ModifyCostResult memory result)
     {
-        result = contangoQuoter.openingCostForPositionWithCollateral(
-            OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee), collateral
+        result = contangoQuoter.openingCostForPositionWithLeverage(
+            OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee), leverage
         );
-        require(!result.insufficientLiquidity, "insufficientLiquidity");
 
+        positionId = _openPosition(trader, quantity, result);
+    }
+
+    function _openPosition(address owner, uint256 quantity, uint256 leverage)
+        internal
+        returns (PositionId positionId, ModifyCostResult memory result)
+    {
+        result = contangoQuoter.openingCostForPositionWithLeverage(
+            OpeningCostParams(symbol, quantity, collateralSlippage, uniswapFee), leverage
+        );
+
+        positionId = _openPosition(owner, quantity, result);
+    }
+
+    function _openPosition(address owner, uint256 quantity, ModifyCostResult memory result)
+        internal
+        returns (PositionId positionId)
+    {
         vm.recordLogs();
         positionId = _createPosition(owner, quantity, result);
 
@@ -232,7 +230,6 @@ abstract contract PositionFixtures is ContangoTestBase {
         result = contangoQuoter.modifyCostForPositionWithCollateral(
             ModifyCostParams(positionId, closeQty, collateralSlippage, uniswapFee), 0
         );
-        require(!result.insufficientLiquidity, "insufficientLiquidity");
 
         vm.recordLogs();
         _modifyPosition(positionId, closeQty, result);
@@ -286,7 +283,6 @@ abstract contract PositionFixtures is ContangoTestBase {
         result = contangoQuoter.modifyCostForPositionWithCollateral(
             ModifyCostParams(positionId, quantity, collateralSlippage, uniswapFee), collateral
         );
-        require(!result.insufficientLiquidity, "insufficientLiquidity");
 
         if (result.collateralUsed < 0) {
             traderBalance += result.collateralUsed.abs();
@@ -438,7 +434,6 @@ abstract contract PositionFixtures is ContangoTestBase {
             }),
             collateral
         );
-        require(!result.insufficientLiquidity, "insufficientLiquidity");
 
         vm.recordLogs();
         _modifyCollateral(
@@ -534,9 +529,12 @@ abstract contract PositionFixtures is ContangoTestBase {
         uint256 treasuryBalance = quote.balanceOf(treasury);
         Position memory position = contango.position(positionId);
         uint256 underlyingBorrowing = _underlyingBalances(positionId).borrowing;
+        uint256 deliveryFee = feeModel.calculateFee(owner, positionId, underlyingBorrowing);
 
         uint256 deliveryCost = contangoQuoter.deliveryCostForPosition(positionId);
-        assertEqDecimal(deliveryCost, underlyingBorrowing + position.protocolFees, quoteDecimals, "deliveryCost");
+        assertEqDecimal(
+            deliveryCost, underlyingBorrowing + position.protocolFees + deliveryFee, quoteDecimals, "deliveryCost"
+        );
         dealAndApprove(address(quote), owner, deliveryCost, address(contango));
 
         vm.recordLogs();
@@ -556,8 +554,7 @@ abstract contract PositionFixtures is ContangoTestBase {
 
         assertEq(to, owner, "to");
         assertEqDecimal(deliveredQuantity, position.openQuantity, baseDecimals, "deliveredQuantity");
-        // We don't charge a fee on delivery
-        assertEqDecimal(totalFees, position.protocolFees, quoteDecimals, "totalFees");
+        assertEqDecimal(totalFees, position.protocolFees + deliveryFee, quoteDecimals, "totalFees");
         assertEqDecimal(_deliveryCost, underlyingBorrowing, quoteDecimals, "deliveryCost 2 ");
 
         assertEqDecimal(quoteBalance(address(contango)), 0, quoteDecimals, "contango balance");
@@ -597,6 +594,11 @@ abstract contract PositionFixtures is ContangoTestBase {
 
     function _assertLeverage(ModifyCostResult memory result, uint256 expected, uint256 tolerance) internal {
         return _assertLeverage(result.underlyingCollateral, result.underlyingDebt, expected, tolerance);
+    }
+
+    function _assertLeverage(PositionId positionId, uint256 expected, uint256 tolerance) internal {
+        PositionStatus memory position = contangoQuoter.positionStatus(positionId, uniswapFee);
+        return _assertLeverage(position.underlyingCollateral, position.underlyingDebt, expected, tolerance);
     }
 
     function _assertLeverage(uint256 underlyingCollateral, uint256 underlyingDebt, uint256 expected, uint256 tolerance)

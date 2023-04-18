@@ -3,7 +3,7 @@ pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-import "@yield-protocol/utils-v2/contracts/utils/RevertMsgExtractor.sol";
+import "@yield-protocol/utils-v2/src/utils/RevertMsgExtractor.sol";
 
 import "src/libraries/DataTypes.sol";
 import "src/libraries/Errors.sol";
@@ -660,24 +660,26 @@ abstract contract ValidationFixtures is PositionFixtures {
         uint256 absCost = result.cost.abs();
         uint256 insufficientLimitCost = absCost - 1e6;
 
-        // expect
-        vm.expectRevert(
+        // when
+        vm.prank(trader);
+        (bool success, bytes memory data) = address(contango).call(
             abi.encodeWithSelector(
-                SlippageLib.CostAboveTolerance.selector, insufficientLimitCost, absCost + _costBuffer()
+                contango.modifyPosition.selector,
+                positionId,
+                increaseQuantity,
+                insufficientLimitCost,
+                result.minCollateral,
+                trader,
+                type(uint256).max,
+                uniswapFee
             )
         );
 
-        // when
-        vm.prank(trader);
-        contango.modifyPosition(
-            positionId,
-            increaseQuantity,
-            insufficientLimitCost,
-            result.minCollateral,
-            trader,
-            type(uint256).max,
-            uniswapFee
-        );
+        // then
+        assertFalse(success);
+        (uint256 limitCost, uint256 actualCost) = abi.decode(removeSelector(data), (uint256, uint256));
+        assertEqDecimal(limitCost, insufficientLimitCost, quoteDecimals, "limitCost");
+        assertApproxEqAbsDecimal(actualCost, absCost + _costBuffer(), 1, quoteDecimals, "actualCost");
     }
 
     function testCanNotDecreasePositionSlippageExceeded() public {

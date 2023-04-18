@@ -9,7 +9,7 @@ import {IOraclePoolStub} from "../../../stub/IOraclePoolStub.sol";
 // solhint-disable func-name-mixedcase
 contract YieldValidationsTest is
     ValidationFixtures,
-    WithYieldFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212)
+    WithYieldFixtures(constants.yETHUSDC2306, constants.FYETH2306, constants.FYUSDC2306)
 {
     function setUp() public override(WithYieldFixtures, ContangoTestBase) {
         super.setUp();
@@ -29,15 +29,15 @@ contract YieldValidationsTest is
         IPoolStub(address(instrument.basePool)).setBidAsk(0.945e18, 0.955e18);
         IPoolStub(address(instrument.quotePool)).setBidAsk(0.895e6, 0.905e6);
 
-        symbol = Symbol.wrap("yETHUSDC2212-2");
+        symbol = Symbol.wrap("yETHUSDC2306-2");
         vm.prank(contangoTimelock);
-        instrument = contangoYield.createYieldInstrumentV2(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
+        instrument = contangoYield.createYieldInstrumentV2(symbol, constants.FYETH2306, constants.FYUSDC2306, feeModel);
 
         vm.startPrank(yieldTimelock);
         compositeOracle.setSource(
-            constants.FYETH2212,
+            constants.FYETH2306,
             constants.ETH_ID,
-            new IOraclePoolStub(IPoolStub(address(instrument.basePool)), constants.FYETH2212)
+            new IOraclePoolStub(IPoolStub(address(instrument.basePool)), constants.FYETH2306)
         );
         vm.stopPrank();
 
@@ -54,10 +54,10 @@ contract YieldValidationsTest is
     }
 
     function testCanNotCreateInstrumentAlreadyExists() public {
-        vm.expectRevert(abi.encodeWithSelector(InstrumentAlreadyExists.selector, constants.yETHUSDC2212));
+        vm.expectRevert(abi.encodeWithSelector(InstrumentAlreadyExists.selector, constants.yETHUSDC2306));
         vm.prank(contangoTimelock);
         contangoYield.createYieldInstrumentV2(
-            constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212, feeModel
+            constants.yETHUSDC2306, constants.FYETH2306, constants.FYUSDC2306, feeModel
         );
     }
 
@@ -74,51 +74,48 @@ contract YieldValidationsTest is
         );
 
         vm.prank(bob);
-        contangoYield.createYieldInstrumentV2(Symbol.wrap("yETHUSDC2212_2"), bytes6(0), constants.FYUSDC2212, feeModel);
+        contangoYield.createYieldInstrumentV2(Symbol.wrap("yETHUSDC2306_2"), bytes6(0), constants.FYUSDC2306, feeModel);
     }
 
     function testCanNotCreateInstrumentInvalidBaseId() public {
         vm.expectRevert(
-            abi.encodeWithSelector(IContangoYieldAdmin.InvalidBaseId.selector, Symbol.wrap("yETHUSDC2212_2"), bytes6(0))
+            abi.encodeWithSelector(IContangoYieldAdmin.InvalidBaseId.selector, Symbol.wrap("yETHUSDC2306_2"), bytes6(0))
         );
 
         vm.prank(contangoTimelock);
-        contangoYield.createYieldInstrumentV2(Symbol.wrap("yETHUSDC2212_2"), bytes6(0), constants.FYUSDC2212, feeModel);
+        contangoYield.createYieldInstrumentV2(Symbol.wrap("yETHUSDC2306_2"), bytes6(0), constants.FYUSDC2306, feeModel);
     }
 
     function testCanNotCreateInstrumentInvalidQuoteId() public {
         vm.expectRevert(
             abi.encodeWithSelector(
-                IContangoYieldAdmin.InvalidQuoteId.selector, Symbol.wrap("yETHUSDC2212_2"), bytes6(0)
+                IContangoYieldAdmin.InvalidQuoteId.selector, Symbol.wrap("yETHUSDC2306_2"), bytes6(0)
             )
         );
 
         vm.prank(contangoTimelock);
-        contangoYield.createYieldInstrumentV2(Symbol.wrap("yETHUSDC2212_2"), constants.FYETH2212, bytes6(0), feeModel);
+        contangoYield.createYieldInstrumentV2(Symbol.wrap("yETHUSDC2306_2"), constants.FYETH2306, bytes6(0), feeModel);
     }
 
-    //TODO re-instate when we have more that 1 maturity
-    // function testCanNotCreateInstrumentMismatchedMaturity() public {
-    //     vm.expectRevert(
-    //         abi.encodeWithSelector(
-    //             IContangoYieldAdmin.MismatchedMaturity.selector,
-    //             Symbol.wrap("yETHUSDC2212_2"),
-    //             constants.FYETH2212,
-    //             constants.MATURITY_2212,
-    //             constants.FYUSDC2206,
-    //             constants.MATURITY_2206
-    //         )
-    //     );
+    function testCanNotCreateInstrumentMismatchedMaturity() public {
+        vm.createSelectFork("arbitrum", 79973205);
 
-    //     vm.prank(contangoTimelock);
-    //     contangoYield.createYieldInstrumentV2(
-    //         Symbol.wrap("yETHUSDC2212_2"),
-    //         constants.FYETH2212,
-    //         constants.FYUSDC2206,
-    //         constants.FEE_0_05,
-    //         feeModel
-    //     );
-    // }
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IContangoYieldAdmin.MismatchedMaturity.selector,
+                Symbol.wrap("yETHUSDC2306_2"),
+                constants.FYETH2306,
+                constants.MATURITY_2306,
+                constants.FYUSDC2303,
+                constants.MATURITY_2303
+            )
+        );
+
+        vm.prank(contangoTimelock);
+        contangoYield.createYieldInstrumentV2(
+            Symbol.wrap("yETHUSDC2306_2"), constants.FYETH2306, constants.FYUSDC2303, feeModel
+        );
+    }
 
     function shouldBeWitch(address caller) internal {
         vm.expectRevert(
@@ -131,22 +128,13 @@ contract YieldValidationsTest is
         );
     }
 
-    // TODO re-instate
-    // function testCanNotFreellyCallWitchEndpoints() public {
-    // address bob = address(0xb0b);
+    function testCanNotFreellyCallCollateralBought() public {
+        address bob = address(0xb0b);
 
-    // shouldBeWitch(bob);
-    // vm.prank(bob);
-    // contango.auctionStarted(bytes12(""));
-
-    // shouldBeWitch(bob);
-    // vm.prank(bob);
-    // contango.auctionEnded(bytes12(""), address(0xf00));
-
-    // shouldBeWitch(bob);
-    // vm.prank(bob);
-    // contango.collateralBought(bytes12(""), address(0), 0, 0);
-    // }
+        shouldBeWitch(bob);
+        vm.prank(bob);
+        contangoYield.collateralBought(bytes12(""), address(0), 0, 0);
+    }
 
     // TODO alfredo - move delivery validations to fixtures once it's implemented in Notional
 
@@ -177,12 +165,12 @@ contract YieldValidationsTest is
 
     function testCanNotPhysicallyDeliverActivePosition() public {
         // given
-        uint256 warpTimestamp = constants.MATURITY_2212 - 1;
+        uint256 warpTimestamp = constants.MATURITY_2306 - 1;
         (PositionId positionId,) = _openPosition(1 ether);
 
         // expect
         vm.expectRevert(
-            abi.encodeWithSelector(PositionActive.selector, positionId, constants.MATURITY_2212, warpTimestamp)
+            abi.encodeWithSelector(PositionActive.selector, positionId, constants.MATURITY_2306, warpTimestamp)
         );
 
         // when
@@ -202,5 +190,11 @@ contract YieldValidationsTest is
         // when
         vm.prank(trader);
         contango.deliver(positionId, payer, trader);
+    }
+
+    function testMaxPositionIdToVaultId(PositionId positionId) public {
+        vm.assume(PositionId.unwrap(positionId) > type(uint48).max);
+        vm.expectRevert(abi.encodeWithSelector(YieldUtils.PositionIdTooLarge.selector, positionId));
+        YieldUtils.toVaultId(positionId);
     }
 }

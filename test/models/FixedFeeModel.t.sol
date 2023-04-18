@@ -37,21 +37,6 @@ contract FixedFeeModelTest is Test {
         assertEq(expectedFees, actualFees);
     }
 
-    function testCalculateFeesNegativeCost() public {
-        // given
-        uint256 feeRate = 0.0015e18;
-        uint256 cost = 10_000e18;
-        uint256 expectedFees = 15e18;
-
-        sut = new FixedFeeModel(feeRate);
-
-        // when
-        uint256 actualFees = sut.calculateFee(address(this), PositionId.wrap(1), cost);
-
-        // then
-        assertEq(expectedFees, actualFees);
-    }
-
     function testCalculateFees6Decimals() public {
         // given
         uint256 feeRate = 0.0015e18;

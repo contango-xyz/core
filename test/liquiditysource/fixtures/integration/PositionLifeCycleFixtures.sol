@@ -120,7 +120,7 @@ abstract contract ArbitrumPositionLifeCycleDAIETHFixtures is PositionLifeCycleFi
     }
 
     function testOpenIncreaseAndClose() public {
-        _testOpenIncreaseAndClose({quantity: 10_000e18, increaseQuantity: 2_500e18, collateralToAdd: 1.5 ether});
+        _testOpenIncreaseAndClose({quantity: 10_000e18, increaseQuantity: 2_500e18, collateralToAdd: 0.5 ether});
     }
 
     function testOpenReduceDepositMaxAndClosePosition() public {
@@ -129,6 +129,24 @@ abstract contract ArbitrumPositionLifeCycleDAIETHFixtures is PositionLifeCycleFi
 }
 
 abstract contract ArbitrumPositionLifeCycleETHUSDCFixtures is PositionLifeCycleFixtures {
+    function testOpenAndClose() public {
+        _testOpenAndClose({quantity: 2 ether});
+    }
+
+    function testOpenReduceAndClose() public {
+        _testOpenReduceAndClose({quantity: 2 ether, reduceQuantity: -0.25 ether});
+    }
+
+    function testOpenIncreaseAndClose() public {
+        _testOpenIncreaseAndClose({quantity: 2 ether, increaseQuantity: 0.25 ether, collateralToAdd: 300e6});
+    }
+
+    function testOpenReduceDepositMaxAndClosePosition() public {
+        _testOpenReduceDepositMaxAndClosePosition({quantity: 2 ether, reduceQuantity: -0.25 ether});
+    }
+}
+
+abstract contract ArbitrumPositionLifeCycleETHUSDTFixtures is PositionLifeCycleFixtures {
     function testOpenAndClose() public {
         _testOpenAndClose({quantity: 2 ether});
     }
