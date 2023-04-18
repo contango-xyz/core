@@ -20,4 +20,3 @@ struct YieldInstrumentStorage {
     IPool quotePool;
     uint96 minQuoteDebt;
 }
-
