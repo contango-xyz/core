@@ -35,14 +35,13 @@ contract CodecLibTest is Test {
         CodecLib.encodeU128(0, n);
     }
 
-    // TODO re-instate after foundry fixes the bug
-    // function testEncodeDecodeI128(int128 a, int128 b) public {
-    //     uint256 encoded = CodecLib.encodeI128(a, b);
-    //     (int256 _a, int256 _b) = CodecLib.decodeI128(encoded);
+    function testEncodeDecodeI128(int128 a, int128 b) public {
+        uint256 encoded = CodecLib.encodeI128(a, b);
+        (int256 _a, int256 _b) = CodecLib.decodeI128(encoded);
 
-    //     assertEq(_a, a);
-    //     assertEq(_b, b);
-    // }
+        assertEq(_a, a);
+        assertEq(_b, b);
+    }
 
     function testEncodeI128Boundaries() public {
         uint256 encoded = CodecLib.encodeI128(type(int128).max, type(int128).min);

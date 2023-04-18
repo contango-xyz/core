@@ -12,11 +12,11 @@ contract IPoolOracleStub is IPoolOracle {
         revert("IPoolOracleStub: not implemented");
     }
 
-    function update(IPool) external pure override returns (bool) {
+    function updatePool(IPool) external pure override returns (bool) {
         revert("IPoolOracleStub: not implemented");
     }
 
-    function update(IPool[] calldata) external pure override {
+    function updatePools(IPool[] calldata) external pure override {
         revert("IPoolOracleStub: not implemented");
     }
 

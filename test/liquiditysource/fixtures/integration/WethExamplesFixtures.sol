@@ -297,12 +297,10 @@ abstract contract WethExamplesETHQuoteFixtures is PositionFixtures {
         );
     }
 
-    function _testDecreasePositionWithExcessQuote(uint256 quantity, uint256 collateral, int256 decreaseQuantity)
-        internal
-    {
+    function _testDecreasePositionWithExcessQuote(uint256 quantity, int256 decreaseQuantity) internal {
         // in this example. we open a heavily collateralised position, so when we decrease, any excess quote is sent back to us
         // but it could also be due to a position becoming profitable for example
-        (PositionId positionId,) = _openPosition(quantity, collateral);
+        (PositionId positionId,) = _openPosition(quantity, 1.2e18);
 
         // clear balance to make assertions easier
         clearBalanceETH(trader);
@@ -326,7 +324,7 @@ abstract contract WethExamplesETHQuoteFixtures is PositionFixtures {
             positionId,
             decreaseQuantity,
             result.cost.slippage(),
-            type(int256).min, // To avoid dust/slippage related issues, if we wanna withdraw all, we set the amount to a very high (low) number
+            result.collateralUsed,
             address(contango),
             result.quoteLendingLiquidity,
             uniswapFee
@@ -344,8 +342,7 @@ abstract contract WethExamplesETHQuoteFixtures is PositionFixtures {
         );
         assertEqDecimal(quote.balanceOf(address(contango)), 0, quoteDecimals, "contango quote balance");
 
-        // Balance is close to the spot cost
-        uint256 expectedBalance = result.spotCost.abs();
+        uint256 expectedBalance = result.collateralUsed.abs();
         assertApproxEqAbsDecimal(
             trader.balance,
             expectedBalance,
@@ -476,7 +473,7 @@ abstract contract MainnetWethExamplesUSDCETHFixtures is WethExamplesETHQuoteFixt
     }
 
     function testDecreasePositionWithExcessQuote() public {
-        _testDecreasePositionWithExcessQuote({quantity: 30_000e6, collateral: 30 ether, decreaseQuantity: -15_000e6});
+        _testDecreasePositionWithExcessQuote({quantity: 30_000e6, decreaseQuantity: -15_000e6});
     }
 
     function testRemoveCollateral() public {
@@ -506,7 +503,7 @@ abstract contract ArbitrumWethExamplesUSDCETHFixtures is WethExamplesETHQuoteFix
     }
 
     function testIncreasePosition() public {
-        _testIncreasePosition({quantity: 3_000e6, increaseQuantity: 3_000e6});
+        _testIncreasePosition({quantity: 3_000e6, increaseQuantity: 4_000e6});
     }
 
     function testIncreaseAndCollateralisePositionAtMax() public {
@@ -522,7 +519,7 @@ abstract contract ArbitrumWethExamplesUSDCETHFixtures is WethExamplesETHQuoteFix
     }
 
     function testDecreasePositionWithExcessQuote() public {
-        _testDecreasePositionWithExcessQuote({quantity: 2_000e6, collateral: 2 ether, decreaseQuantity: -1_000e6});
+        _testDecreasePositionWithExcessQuote({quantity: 2_000e6, decreaseQuantity: -1_000e6});
     }
 
     function testRemoveCollateral() public {
@@ -533,5 +530,11 @@ abstract contract ArbitrumWethExamplesUSDCETHFixtures is WethExamplesETHQuoteFix
 abstract contract ArbitrumWethExamplesETHUSDCFixtures is WethExamplesETHBaseFixtures {
     function testDeliverPosition() public {
         _testDeliverPosition({quantity: 2 ether});
+    }
+}
+
+abstract contract ArbitrumWethExamplesETHUSDTFixtures is WethExamplesETHBaseFixtures {
+    function testDeliverPosition() public {
+        _testDeliverPosition({quantity: 0.5 ether});
     }
 }

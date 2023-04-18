@@ -14,21 +14,18 @@ abstract contract WithYieldFixtures is YieldFixtures, WithArbitrum {
         witch = IWitch(0x89343a24a217172A569A0bD68763Bf0671A3efd8);
         ladle = IContangoLadle(0x93343C08e2055b7793a3336d659Be348FC1B08f9);
         cauldron = ICauldron(0x44386ddB4C44E7CB8981f97AF89E928Ddd4258DD);
-        poolOracle = IPoolOracle(0x210F4e1942bEEc4038743A8f885B870E0c27b414);
+        poolOracle = IPoolOracle(0xedc965dcD634B0A9843569577654669225955E8A);
         compositeOracle = CompositeMultiOracle(0x750B3a18115fe090Bc621F9E4B90bd442bcd02F2);
+        identityOracle = IOracle(0xce3d36e19De6A7b66e851c5B7e468E35Dc83d29d);
 
         yieldTimelock = address(0xd0a22827Aed2eF5198EbEc0093EA33A4CD641b6c);
 
-        blockNo = 29435053;
+        chain = "arbitrum";
+        blockNo = 81417005;
     }
 
     function setUp() public virtual override(YieldFixtures, WithArbitrum) {
         super.setUp();
-
-        // TODO remove when possible
-        vm.startPrank(contangoTimelock);
-        contango.grantRole(contango.EMERGENCY_BREAK(), contangoMultisig);
-        contango.grantRole(contango.OPERATOR(), contangoMultisig);
-        vm.stopPrank();
+        skip(10 minutes);
     }
 }

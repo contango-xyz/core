@@ -29,5 +29,18 @@ abstract contract WithYieldFixtures is YieldFixtures, WithMainnet {
         contango.grantRole(contango.EMERGENCY_BREAK(), contangoMultisig);
         contango.grantRole(contango.OPERATOR(), contangoMultisig);
         vm.stopPrank();
+
+        // TODO do this for real and update block
+        if (address(identityOracle) == address(0)) {
+            identityOracle = new IdentityOracle();
+        }
+        bytes6 baseId = cauldron.series(baseSeriesId).baseId;
+        bytes6[] memory ilkIds = new bytes6[](1);
+        ilkIds[0] = baseId;
+        vm.startPrank(yieldTimelock);
+        ICauldronExt(address(cauldron)).setDebtLimits(baseId, baseId, type(uint64).max, 0, 18);
+        ICauldronExt(address(cauldron)).setSpotOracle(baseId, baseId, identityOracle, 1e6);
+        ICauldronExt(address(cauldron)).addIlks(baseSeriesId, ilkIds);
+        vm.stopPrank();
     }
 }

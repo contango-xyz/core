@@ -2,9 +2,10 @@
 @openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
 @uniswap/v3-core/=lib/v3-core/
 @uniswap/v3-periphery/=lib/v3-periphery/
+@uniswap/swap-router-contracts/=lib/swap-router-contracts/
 @yield-protocol/utils-v2/=lib/yield-utils-v2/
 @yield-protocol/yieldspace-tv/=lib/yieldspace-tv/
-@yield-protocol/vault-v2/=lib/vault-v2/packages/foundry/
+@yield-protocol/vault-v2/=lib/vault-v2/
 ds-test/=lib/forge-std/lib/ds-test/src/
 dss-interfaces/=lib/dss-interfaces/
 erc3156/=lib/ERC3156/

@@ -19,9 +19,9 @@ abstract contract WithMainnet is ContangoTestBase {
         chainlinkUsdOracles[WETH9] = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419;
 
         positionNFT = ContangoPositionNFT(0x361F0201e82c9d701bcA9913191086476A8df53a);
-        contangoTimelock = address(0x62C66911aF80994A7d3758cD77afd67098AC665e);
-        contangoMultisig = address(0xe16cfA41902FDA3B0C86f1634F4A2C11af0C7Ece);
-        treasury = address(0x3bfbc7016ad9780F3509752119E09549353A3843);
+        contangoTimelock = 0x62C66911aF80994A7d3758cD77afd67098AC665e;
+        contangoMultisig = 0xe16cfA41902FDA3B0C86f1634F4A2C11af0C7Ece;
+        treasury = 0x3bfbc7016ad9780F3509752119E09549353A3843;
         chain = "mainnet";
         chainId = 1;
     }

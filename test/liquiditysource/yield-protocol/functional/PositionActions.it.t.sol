@@ -27,7 +27,9 @@ contract YieldPositionActionsETHUSDCTest is PositionActionsETHUSDCFixtures, Yiel
     function _assertUnderlyingBalances(PositionId positionId, uint256 lending, uint256 borrowing) internal override {
         DataTypes.Balances memory balances = cauldron.balances(positionId.toVaultId());
         assertEqDecimal(balances.ink, lending, baseDecimals, "ink");
-        assertApproxEqAbsDecimal(balances.art, borrowing, costBuffer * costBufferMultiplier, quoteDecimals, "art");
+        assertApproxEqAbsDecimal(
+            balances.art, borrowing, costBuffer * costBufferMultiplier + leverageBuffer, quoteDecimals, "art"
+        );
     }
 
     // function testOpenAndClosePositionMaxCollateral() public {

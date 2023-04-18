@@ -10,13 +10,15 @@ abstract contract CollateralManagementETHUSDCFixtures is PositionFixtures {
 
     function testAddCollateral() public {
         // Open position
-        (PositionId positionId, ModifyCostResult memory result) = _openPosition(2 ether, 800e6);
+        (PositionId positionId, ModifyCostResult memory result) = _openPosition(2 ether, 1.835293426713062884e18);
 
         Position memory position = contango.position(positionId);
         assertEqDecimal(position.openQuantity, 2 ether, quoteDecimals, "open openQuantity");
-        assertApproxEqAbsDecimal(position.openCost, 1402.134078e6, costBuffer, quoteDecimals, "open openCost");
+        assertApproxEqAbsDecimal(
+            position.openCost, 1402.134078e6, costBuffer + leverageBuffer, quoteDecimals, "open openCost"
+        );
         assertEqDecimal(position.protocolFees, 2.103202e6, quoteDecimals, "open protocolFees");
-        assertEqDecimal(position.collateral, 797.896798e6, quoteDecimals, "open collateral");
+        assertApproxEqAbsDecimal(position.collateral, 797.896798e6, leverageBuffer, quoteDecimals, "open collateral");
 
         _assertNoBalances(trader, "trader");
 
@@ -32,7 +34,7 @@ abstract contract CollateralManagementETHUSDCFixtures is PositionFixtures {
 
         // open cost - cost
         // 1402.134078 - 10.497237 = 1391.636842
-        assertApproxEqAbsDecimal(position.openCost, 1391.636842e6, costBuffer, quoteDecimals, "add collateral openCost");
+        assertApproxEqAbsDecimal(position.openCost, 1391.636874e6, costBuffer, quoteDecimals, "add collateral openCost");
 
         // 0.15% debtDelta
         // 110.497237 * 0.0015 = 0.165746 fees (rounded up)
@@ -42,7 +44,9 @@ abstract contract CollateralManagementETHUSDCFixtures is PositionFixtures {
 
         // open collateral + collateral - fee
         // 797.896798 + 100 - 0.165746 = 897.731052
-        assertEqDecimal(position.collateral, 897.731052e6, quoteDecimals, "add collateral collateral");
+        assertApproxEqAbsDecimal(
+            position.collateral, 897.730821e6, leverageBuffer, quoteDecimals, "add collateral collateral"
+        );
 
         {
             Vm.Log memory _log = recordedLogs.first("CollateralAdded(bytes32,address,uint256,uint256,uint256)");
@@ -61,13 +65,15 @@ abstract contract CollateralManagementETHUSDCFixtures is PositionFixtures {
 
     function testRemoveCollateral() public {
         // Open position
-        (PositionId positionId, ModifyCostResult memory result) = _openPosition(2 ether, 800e6);
+        (PositionId positionId, ModifyCostResult memory result) = _openPosition(2 ether, 1.835293426713062884e18);
 
         Position memory position = contango.position(positionId);
         assertEqDecimal(position.openQuantity, 2 ether, quoteDecimals, "open openQuantity");
-        assertApproxEqAbsDecimal(position.openCost, 1402.134079e6, costBuffer, quoteDecimals, "open openCost");
+        assertApproxEqAbsDecimal(
+            position.openCost, 1402.134079e6, costBuffer + leverageBuffer, quoteDecimals, "open openCost"
+        );
         assertEqDecimal(position.protocolFees, 2.103202e6, quoteDecimals, "open protocolFees");
-        assertEqDecimal(position.collateral, 797.896798e6, quoteDecimals, "open collateral");
+        assertApproxEqAbsDecimal(position.collateral, 797.896798e6, leverageBuffer, quoteDecimals, "open collateral");
 
         _assertNoBalances(trader, "trader");
 
@@ -88,7 +94,7 @@ abstract contract CollateralManagementETHUSDCFixtures is PositionFixtures {
         // open cost - cost
         // 1402.134079 + 11.731843 = 1413.865922
         assertApproxEqAbsDecimal(
-            position.openCost, 1413.865922e6, costBuffer, quoteDecimals, "remove collateral openCost"
+            position.openCost, 1413.865922e6, costBuffer + leverageBuffer, quoteDecimals, "remove collateral openCost"
         );
 
         // 0.15% debtDelta
@@ -99,7 +105,9 @@ abstract contract CollateralManagementETHUSDCFixtures is PositionFixtures {
 
         // open collateral + collateral - fee
         // 797.896798 - 100 - 0.167598 = 697.7292
-        assertEqDecimal(position.collateral, 697.7292e6, quoteDecimals, "remove collateral collateral");
+        assertApproxEqAbsDecimal(
+            position.collateral, 697.7292e6, leverageBuffer, quoteDecimals, "remove collateral collateral"
+        );
 
         {
             Vm.Log memory _log = recordedLogs.first("CollateralRemoved(bytes32,address,uint256,uint256,uint256)");

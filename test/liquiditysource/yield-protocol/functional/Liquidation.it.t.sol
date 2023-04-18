@@ -7,7 +7,7 @@ import {IOraclePoolStub} from "../../../stub/IOraclePoolStub.sol";
 
 contract YieldLiquidationUSDCTest is
     LiquidationFixtures,
-    WithYieldFixtures(constants.yETHUSDC2212, constants.FYETH2212, constants.FYUSDC2212)
+    WithYieldFixtures(constants.yETHUSDC2306, constants.FYETH2306, constants.FYUSDC2306)
 {
     using SignedMath for int256;
     using SafeCast for int256;
@@ -31,15 +31,15 @@ contract YieldLiquidationUSDCTest is
         IPoolStub(address(instrument.basePool)).setBidAsk(0.945e18, 0.955e18);
         IPoolStub(address(instrument.quotePool)).setBidAsk(0.895e6, 0.905e6);
 
-        symbol = Symbol.wrap("yETHUSDC2212-2");
+        symbol = Symbol.wrap("yETHUSDC2306-2");
         vm.prank(contangoTimelock);
-        instrument = contangoYield.createYieldInstrumentV2(symbol, constants.FYETH2212, constants.FYUSDC2212, feeModel);
+        instrument = contangoYield.createYieldInstrumentV2(symbol, constants.FYETH2306, constants.FYUSDC2306, feeModel);
 
         vm.startPrank(yieldTimelock);
         compositeOracle.setSource(
-            constants.FYETH2212,
+            constants.FYETH2306,
             constants.ETH_ID,
-            new IOraclePoolStub(IPoolStub(address(instrument.basePool)), constants.FYETH2212)
+            new IOraclePoolStub(IPoolStub(address(instrument.basePool)), constants.FYETH2306)
         );
         vm.stopPrank();
 
@@ -60,7 +60,7 @@ contract YieldLiquidationUSDCTest is
         PositionId positionId = _halfOfThePositionWasAuctionedAndImmediatelyBought();
 
         // When
-        vm.warp(cauldron.series(constants.FYUSDC2212).maturity);
+        vm.warp(cauldron.series(constants.FYUSDC2306).maturity);
 
         // Then
         _deliverPosition(positionId);
@@ -79,7 +79,7 @@ contract YieldLiquidationUSDCTest is
         PositionId positionId = _allThePositionWasAuctionedAndImmediatelyBought();
 
         // When
-        vm.warp(cauldron.series(constants.FYUSDC2212).maturity);
+        vm.warp(cauldron.series(constants.FYUSDC2306).maturity);
 
         // Then
         _deliverPosition(positionId);
@@ -105,7 +105,7 @@ contract YieldLiquidationUSDCTest is
 
     function testPositionHasNothingLeftAndDeliverPosition() public {
         PositionId positionId = _allThePositionWasAuctionedAndBoughtAfterDuration();
-        vm.warp(cauldron.series(constants.FYUSDC2212).maturity);
+        vm.warp(cauldron.series(constants.FYUSDC2306).maturity);
 
         vm.expectRevert(abi.encodeWithSelector(InvalidPosition.selector, positionId));
         contangoQuoter.deliveryCostForPosition(positionId);
@@ -116,7 +116,7 @@ contract YieldLiquidationUSDCTest is
     }
 
     function testPositionUnderAuction() public {
-        (PositionId positionId,) = _openPosition(10 ether, 3520e6);
+        (PositionId positionId,) = _openPosition(10 ether, 100e18);
         stubPrice({
             _base: WETH9,
             _quote: USDC,
@@ -136,8 +136,8 @@ contract YieldLiquidationUSDCTest is
     }
 
     function testExpiredPositionUnderAuction() public {
-        (PositionId positionId,) = _openPosition(10 ether, 3520e6);
-        vm.warp(cauldron.series(constants.FYUSDC2212).maturity);
+        (PositionId positionId,) = _openPosition(10 ether, 100e18);
+        vm.warp(cauldron.series(constants.FYUSDC2306).maturity);
         stubPrice({
             _base: WETH9,
             _quote: USDC,
@@ -158,7 +158,7 @@ contract YieldLiquidationUSDCTest is
     }
 
     function _halfOfThePositionWasAuctionedAndImmediatelyBought() internal returns (PositionId positionId) {
-        (positionId,) = _openPosition(10 ether, 3520e6);
+        (positionId,) = _openPosition(10 ether, 100e18);
         bytes12 vaultId = positionId.toVaultId();
         DataTypes.Balances memory balances = cauldron.balances(vaultId);
         Position memory position = contango.position(positionId);
@@ -176,7 +176,7 @@ contract YieldLiquidationUSDCTest is
         witch.auction(vaultId, liquidator);
         (uint256 liquidatorCut,, uint256 artIn) = witch.calcPayout(vaultId, liquidator, type(uint256).max);
         assertEqDecimal(artIn, balances.art / 2, 6, "artIn");
-        assertEqDecimal(liquidatorCut, (balances.ink * 0.375e18) / 1e18, baseDecimals, "liquidatorCut"); // ink * 0.5 * 0.75 => ink * 0.375
+        assertEqDecimal(liquidatorCut, (balances.ink / 2 * 0.8928571428571429e18) / 1e18, baseDecimals, "liquidatorCut");
 
         _liquidate(vaultId, artIn);
 
@@ -185,7 +185,7 @@ contract YieldLiquidationUSDCTest is
     }
 
     function _allThePositionWasAuctionedAndImmediatelyBought() internal returns (PositionId positionId) {
-        (positionId,) = _openPosition(10 ether, 3520e6);
+        (positionId,) = _openPosition(10 ether, 100e18);
         bytes12 vaultId = positionId.toVaultId();
         DataTypes.Balances memory balances = cauldron.balances(vaultId);
         Position memory position = contango.position(positionId);
@@ -193,7 +193,7 @@ contract YieldLiquidationUSDCTest is
         vm.prank(yieldTimelock);
         ICauldronExt(address(cauldron)).setDebtLimits({
             baseId: constants.USDC_ID,
-            ilkId: constants.FYETH2212,
+            ilkId: constants.FYETH2306,
             max: 100_000,
             min: 5_000,
             dec: 6
@@ -212,7 +212,7 @@ contract YieldLiquidationUSDCTest is
         witch.auction(vaultId, liquidator);
         (uint256 liquidatorCut,, uint256 artIn) = witch.calcPayout(vaultId, liquidator, type(uint256).max);
         assertEqDecimal(artIn, balances.art, 6, "artIn");
-        assertEqDecimal(liquidatorCut, (balances.ink * 0.75e18) / 1e18, baseDecimals, "liquidatorCut"); // ink * 0.75
+        assertEqDecimal(liquidatorCut, (balances.ink * 0.8928571428571429e18) / 1e18, baseDecimals, "liquidatorCut");
 
         _liquidate(vaultId, artIn);
 
@@ -221,7 +221,7 @@ contract YieldLiquidationUSDCTest is
     }
 
     function _allThePositionWasAuctionedAndBoughtAfterDuration() internal returns (PositionId positionId) {
-        (positionId,) = _openPosition(10 ether, 3520e6);
+        (positionId,) = _openPosition(10 ether, 100e18);
         bytes12 vaultId = positionId.toVaultId();
         DataTypes.Balances memory balances = cauldron.balances(vaultId);
         Position memory position = contango.position(positionId);
@@ -229,7 +229,7 @@ contract YieldLiquidationUSDCTest is
         vm.prank(yieldTimelock);
         ICauldronExt(address(cauldron)).setDebtLimits({
             baseId: constants.USDC_ID,
-            ilkId: constants.FYETH2212,
+            ilkId: constants.FYETH2306,
             max: 100_000,
             min: 5_000,
             dec: 6

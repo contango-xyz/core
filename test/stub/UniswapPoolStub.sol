@@ -20,7 +20,8 @@ contract UniswapPoolStub {
         int256 absoluteSpread
     );
 
-    error MissingRepayment(uint256 expected, uint256 actual, int256 diff);
+    error TooMuchRepaid(uint256 expected, uint256 actual, uint256 diff);
+    error TooLittleRepaid(uint256 expected, uint256 actual, uint256 diff);
 
     ERC20 public immutable token0;
     ERC20 public immutable token1;
@@ -107,17 +108,22 @@ contract UniswapPoolStub {
             uint256 expected = token1.balanceOf(address(this)) + uint256(amount1);
             IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(amount0, amount1, data);
             uint256 actual = token1.balanceOf(address(this));
-            if (actual < expected) {
-                revert MissingRepayment(expected, actual, int256(expected) - int256(actual));
-            }
+            _validateRepayment(actual, expected);
         } else {
             token1.safeTransfer(recipient, uint256(-amount1));
             uint256 expected = token0.balanceOf(address(this)) + uint256(amount0);
             IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(amount0, amount1, data);
             uint256 actual = token0.balanceOf(address(this));
-            if (actual < expected) {
-                revert MissingRepayment(expected, actual, int256(expected) - int256(actual));
-            }
+            _validateRepayment(actual, expected);
+        }
+    }
+
+    function _validateRepayment(uint256 actual, uint256 expected) internal pure {
+        if (actual > expected + 5) {
+            revert TooMuchRepaid(expected, actual, actual - expected);
+        }
+        if (actual < expected) {
+            revert TooLittleRepaid(expected, actual, expected - actual);
         }
     }
 

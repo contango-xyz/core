@@ -17,9 +17,9 @@ abstract contract CollateralManagementFixtures is PositionFixtures {
         _closePosition(positionId);
     }
 
-    function _testRemoveCollateralOnPosition(uint256 quantity, uint256 collateral, int256 collateralToRemove) public {
+    function _testRemoveCollateralOnPosition(uint256 quantity, int256 collateralToRemove) public {
         // Open position
-        (PositionId positionId,) = _openPosition(quantity, collateral);
+        (PositionId positionId,) = _openPosition(quantity, 2e18);
 
         // Remove collateral
         _modifyCollateral({positionId: positionId, collateral: collateralToRemove});
@@ -37,7 +37,7 @@ abstract contract MainnetCollateralManagementETHDAIFixtures is CollateralManagem
     }
 
     function testRemoveCollateralOnPosition() public {
-        _testRemoveCollateralOnPosition({quantity: 20 ether, collateral: 20_000e18, collateralToRemove: -500e18});
+        _testRemoveCollateralOnPosition({quantity: 20 ether, collateralToRemove: -500e18});
     }
 }
 
@@ -47,7 +47,7 @@ abstract contract MainnetCollateralManagementUSDCETHFixtures is CollateralManage
     }
 
     function testRemoveCollateralOnPosition() public {
-        _testRemoveCollateralOnPosition({quantity: 30_000e6, collateral: 12 ether, collateralToRemove: -0.5 ether});
+        _testRemoveCollateralOnPosition({quantity: 30_000e6, collateralToRemove: -0.5 ether});
     }
 }
 
@@ -57,7 +57,7 @@ abstract contract MainnetCollateralManagementETHUSDCFixtures is CollateralManage
     }
 
     function testRemoveCollateralOnPosition() public {
-        _testRemoveCollateralOnPosition({quantity: 20 ether, collateral: 20_000e6, collateralToRemove: -500e6});
+        _testRemoveCollateralOnPosition({quantity: 20 ether, collateralToRemove: -500e6});
     }
 }
 
@@ -69,7 +69,7 @@ abstract contract ArbitrumCollateralManagementETHDAIFixtures is CollateralManage
     }
 
     function testRemoveCollateralOnPosition() public {
-        _testRemoveCollateralOnPosition({quantity: 2 ether, collateral: 2_000e18, collateralToRemove: -500e18});
+        _testRemoveCollateralOnPosition({quantity: 2 ether, collateralToRemove: -500e18});
     }
 }
 
@@ -79,7 +79,7 @@ abstract contract ArbitrumCollateralManagementUSDCETHFixtures is CollateralManag
     }
 
     function testRemoveCollateralOnPosition() public {
-        _testRemoveCollateralOnPosition({quantity: 10_000e6, collateral: 4 ether, collateralToRemove: -0.5 ether});
+        _testRemoveCollateralOnPosition({quantity: 10_000e6, collateralToRemove: -0.5 ether});
     }
 }
 
@@ -89,6 +89,16 @@ abstract contract ArbitrumCollateralManagementETHUSDCFixtures is CollateralManag
     }
 
     function testRemoveCollateralOnPosition() public {
-        _testRemoveCollateralOnPosition({quantity: 2 ether, collateral: 2_000e6, collateralToRemove: -500e6});
+        _testRemoveCollateralOnPosition({quantity: 2 ether, collateralToRemove: -500e6});
+    }
+}
+
+abstract contract ArbitrumCollateralManagementETHUSDTFixtures is CollateralManagementFixtures {
+    function testAddCollateralToPosition() public {
+        _testAddCollateralToPosition({quantity: 2 ether, collateralToAdd: 500e6});
+    }
+
+    function testRemoveCollateralOnPosition() public {
+        _testRemoveCollateralOnPosition({quantity: 2 ether, collateralToRemove: -500e6});
     }
 }

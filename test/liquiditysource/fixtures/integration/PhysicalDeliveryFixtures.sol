@@ -29,8 +29,8 @@ abstract contract PhysicalDeliveryFixtures is PositionFixtures {
         address payable traderAlice = utils.getNextUserAddress("Trader Alice");
         address payable traderJoe = utils.getNextUserAddress("Trader Joe");
 
-        (PositionId alicePositionId,) = _openPosition(traderAlice, quantity);
-        (PositionId joePositionId,) = _openPosition(traderJoe, quantity);
+        (PositionId alicePositionId,) = _openPosition(traderAlice, quantity, 2e18);
+        (PositionId joePositionId,) = _openPosition(traderJoe, quantity, 2e18);
 
         // When
         vm.warp(maturity);
@@ -115,6 +115,16 @@ abstract contract ArbitrumPhysicalDeliveryETHUSDCFixtures is PhysicalDeliveryFix
 
     function testDeliverMultiplePositions() public {
         _testDeliverMultiplePositions(2 ether);
+    }
+}
+
+abstract contract ArbitrumPhysicalDeliveryETHUSDTFixtures is PhysicalDeliveryFixtures {
+    function testDeliverPosition() public {
+        _testDeliverPosition(0.5 ether);
+    }
+
+    function testDeliverMultiplePositions() public {
+        _testDeliverMultiplePositions(0.5 ether);
     }
 }
 

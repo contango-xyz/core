@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.17;
 
-import "@yield-protocol/vault-v2/contracts/interfaces/IOracle.sol";
+import "@yield-protocol/vault-v2/src/interfaces/IOracle.sol";
 import "./IPoolStub.sol";
 
 contract IOraclePoolStub is IOracle {

@@ -37,6 +37,7 @@ abstract contract ContangoTestBase is Test, IContangoEvents, IContangoAdminEvent
 
     ERC20 internal DAI;
     ERC20 internal USDC;
+    ERC20 internal USDT;
     ERC20 internal WBTC;
     WETH internal WETH9;
     ERC20 internal CUSDC;
@@ -69,6 +70,7 @@ abstract contract ContangoTestBase is Test, IContangoEvents, IContangoAdminEvent
 
     uint256 internal costBuffer;
     uint256 internal costBufferMultiplier = 1; // up to how many times buffer could be applied for tests where the positions were modified
+    uint256 internal leverageBuffer; // error buffer for leverage calculations
 
     function setUp() public virtual {
         vm.label(trader, "Trader Bob");
@@ -111,5 +113,36 @@ abstract contract ContangoTestBase is Test, IContangoEvents, IContangoAdminEvent
         uint256 snapshotId = vm.snapshot();
         _;
         vm.revertTo(snapshotId);
+    }
+
+    function removeSelector(bytes memory calldataWithSelector) internal pure returns (bytes memory) {
+        bytes memory calldataWithoutSelector;
+
+        require(calldataWithSelector.length >= 4);
+
+        assembly {
+            let totalLength := mload(calldataWithSelector)
+            let targetLength := sub(totalLength, 4)
+            calldataWithoutSelector := mload(0x40)
+
+            // Set the length of callDataWithoutSelector (initial length - 4)
+            mstore(calldataWithoutSelector, targetLength)
+
+            // Mark the memory space taken for callDataWithoutSelector as allocated
+            mstore(0x40, add(0x20, targetLength))
+
+            // Process first 32 bytes (we only take the last 28 bytes)
+            mstore(add(calldataWithoutSelector, 0x20), shl(0x20, mload(add(calldataWithSelector, 0x20))))
+
+            // Process all other data by chunks of 32 bytes
+            for { let i := 0x1C } lt(i, targetLength) { i := add(i, 0x20) } {
+                mstore(
+                    add(add(calldataWithoutSelector, 0x20), i),
+                    mload(add(add(calldataWithSelector, 0x20), add(i, 0x04)))
+                )
+            }
+        }
+
+        return calldataWithoutSelector;
     }
 }

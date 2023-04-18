@@ -31,7 +31,7 @@ contract YieldMainnetCollateralManagementETHUSDCTest is
     }
 }
 
-abstract contract YieldMainnetPositionLifeCycle2306Test is WithYieldFixtures {
+abstract contract YieldMainnetCollateralManagement2306Test is WithYieldFixtures {
     constructor(Symbol _symbol, bytes6 _baseSeriesId, bytes6 _quoteSeriesId)
         WithYieldFixtures(_symbol, _baseSeriesId, _quoteSeriesId)
     {
@@ -43,7 +43,7 @@ abstract contract YieldMainnetPositionLifeCycle2306Test is WithYieldFixtures {
 
 contract YieldMainnetCollateralManagementETHDAI2306Test is
     MainnetCollateralManagementETHDAIFixtures,
-    YieldMainnetPositionLifeCycle2306Test(constants.yETHDAI2306, constants.FYETH2306, constants.FYDAI2306)
+    YieldMainnetCollateralManagement2306Test(constants.yETHDAI2306, constants.FYETH2306, constants.FYDAI2306)
 {
     function setUp() public override(WithYieldFixtures, ContangoTestBase) {
         super.setUp();
@@ -52,7 +52,7 @@ contract YieldMainnetCollateralManagementETHDAI2306Test is
 
 contract YieldMainnetCollateralManagementUSDCETH2306Test is
     MainnetCollateralManagementUSDCETHFixtures,
-    YieldMainnetPositionLifeCycle2306Test(constants.yUSDCETH2306, constants.FYUSDC2306, constants.FYETH2306)
+    YieldMainnetCollateralManagement2306Test(constants.yUSDCETH2306, constants.FYUSDC2306, constants.FYETH2306)
 {
     function setUp() public override(WithYieldFixtures, ContangoTestBase) {
         super.setUp();
@@ -61,7 +61,7 @@ contract YieldMainnetCollateralManagementUSDCETH2306Test is
 
 contract YieldMainnetCollateralManagementETHUSDC2306Test is
     MainnetCollateralManagementETHUSDCFixtures,
-    YieldMainnetPositionLifeCycle2306Test(constants.yETHUSDC2306, constants.FYETH2306, constants.FYUSDC2306)
+    YieldMainnetCollateralManagement2306Test(constants.yETHUSDC2306, constants.FYETH2306, constants.FYUSDC2306)
 {
     function setUp() public override(WithYieldFixtures, ContangoTestBase) {
         super.setUp();

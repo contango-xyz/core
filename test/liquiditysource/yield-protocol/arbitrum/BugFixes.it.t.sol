@@ -15,7 +15,7 @@ contract QuoterBugFix61182114 is Test {
 
     ContangoYieldQuoter public contangoQuoter;
 
-    function setUp() public {
+    function testBug1() public {
         vm.createSelectFork("arbitrum", 61182114);
 
         contangoQuoter = new ContangoYieldQuoter(positionNFT, contango, cauldron, quoter);
@@ -23,11 +23,21 @@ contract QuoterBugFix61182114 is Test {
         ContangoYield impl = new ContangoYield(WETH(payable(0x82aF49447D8a07e3bd95BD0d56f35241523fBab1)));
         vm.prank(0xe213C68563EE4c519183AE6c8Fc15d60bEaD95bb); // contango timelock
         ContangoYield(payable(address(contango))).upgradeTo(address(impl));
-    }
 
-    function test() public {
         contangoQuoter.modifyCostForPositionWithLeverage(
             ModifyCostParams(PositionId.wrap(841), -2 ether, 0.001e18, 500), 2e18
+        );
+    }
+
+    function testBug2() public {
+        vm.createSelectFork("arbitrum", 79973205);
+
+        contangoQuoter = new ContangoYieldQuoter(positionNFT, contango, cauldron, quoter);
+
+        skip(10 minutes);
+
+        contangoQuoter.modifyCostForPositionWithLeverage(
+            ModifyCostParams(PositionId.wrap(843), 199.5e18, 0.001e18, 500), 6.68e18
         );
     }
 }
