@@ -6,8 +6,8 @@ import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "@openzeppelin/contracts/utils/math/SignedMath.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import {IQuoter} from "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
-import {DataTypes} from "@yield-protocol/vault-v2/contracts/interfaces/DataTypes.sol";
-import {ICauldron} from "@yield-protocol/vault-v2/contracts/interfaces/ICauldron.sol";
+import {DataTypes} from "@yield-protocol/vault-v2/src/interfaces/DataTypes.sol";
+import {ICauldron} from "@yield-protocol/vault-v2/src/interfaces/ICauldron.sol";
 
 import "../../libraries/CodecLib.sol";
 import "../../ContangoPositionNFT.sol";
@@ -98,7 +98,7 @@ contract ContangoYieldQuoter is IContangoQuoter {
         (Position memory position, YieldInstrument memory instrument) = _validateExpiredPosition(positionId);
         DataTypes.Balances memory balances = cauldron.balances(positionId.toVaultId());
 
-        return _deliveryCostForPosition(balances, instrument, position);
+        return _deliveryCostForPosition(positionId, balances, instrument, position);
     }
 
     // ============================================== private functions ==============================================
@@ -112,6 +112,7 @@ contract ContangoYieldQuoter is IContangoQuoter {
         _checkClosingOnly(params.symbol, instrument);
 
         result = _modifyCostForLongPosition(
+            PositionId.wrap(0),
             DataTypes.Balances({art: 0, ink: 0}),
             instrument,
             int256(params.quantity),
@@ -136,7 +137,14 @@ contract ContangoYieldQuoter is IContangoQuoter {
         }
 
         result = _modifyCostForLongPosition(
-            balances, instrument, params.quantity, collateral, params.collateralSlippage, leverage, params.uniswapFee
+            params.positionId,
+            balances,
+            instrument,
+            params.quantity,
+            collateral,
+            params.collateralSlippage,
+            leverage,
+            params.uniswapFee
         );
         if (result.needsBatchedCall || params.quantity == 0) {
             uint256 aggregateCost = (result.cost + result.financingCost).abs() + result.debtDelta.abs();
@@ -172,6 +180,7 @@ contract ContangoYieldQuoter is IContangoQuoter {
     }
 
     function _modifyCostForLongPosition(
+        PositionId positionId,
         DataTypes.Balances memory balances,
         YieldInstrument memory instrument,
         int256 quantity,
@@ -185,21 +194,24 @@ contract ContangoYieldQuoter is IContangoQuoter {
         DataTypes.Series memory series = cauldron.series(instrument.quoteId);
         DataTypes.Debt memory debt = cauldron.debt(series.baseId, instrument.baseId);
         maxAvailableDebt = uint128(debt.max * (10 ** debt.dec)) - debt.sum;
-        _evaluateLiquidity(instrument, balances, result, quantity, collateral);
 
-        if (!result.insufficientLiquidity) {
-            _assignLiquidity(instrument, balances, result, quantity, collateral);
+        if (quantity >= 0) {
+            // If we're opening a new position
+            if (
+                balances.art == 0
+                    && Math.min(instrument.quotePool.maxFYTokenIn.cap(), maxAvailableDebt) < result.minDebt
+            ) revert InsufficientLiquidity();
 
-            if (quantity >= 0) {
-                _increasingCostForLongPosition(
-                    result, balances, series, instrument, quantity.toUint256(), collateral, leverage, uniswapFee
-                );
-            } else {
-                _closingCostForLongPosition(
-                    result, balances, series, instrument, quantity.abs(), collateral, leverage, uniswapFee
-                );
-            }
+            _increasingCostForLongPosition(
+                result, balances, series, instrument, quantity.toUint256(), collateral, leverage, uniswapFee
+            );
+        } else {
+            _closingCostForLongPosition(
+                positionId, result, balances, series, instrument, quantity.abs(), collateral, leverage, uniswapFee
+            );
         }
+
+        _assignLiquidity(instrument, balances, result, quantity, result.collateralUsed);
     }
 
     // **** NEW **** //
@@ -217,7 +229,7 @@ contract ContangoYieldQuoter is IContangoQuoter {
         int256 quoteQty;
 
         if (quantity > 0) {
-            hedge = instrument.basePool.buyFYTokenPreview.orMint(quantity.toUint128(), result.baseLendingLiquidity);
+            hedge = instrument.basePool.buyFYTokenPreview.orMint(quantity.toUint128());
             quoteQty =
                 -int256(quoter.spot(address(instrument.base), address(instrument.quote), -int256(hedge), uniswapFee));
             result.spotCost =
@@ -238,6 +250,7 @@ contract ContangoYieldQuoter is IContangoQuoter {
     /// @notice Quotes the bid rate, the base/quote are derived from the positionId
     // **** NEW **** //
     function _closingCostForLongPosition(
+        PositionId positionId,
         ModifyCostResult memory result,
         DataTypes.Balances memory balances,
         DataTypes.Series memory series,
@@ -247,8 +260,13 @@ contract ContangoYieldQuoter is IContangoQuoter {
         uint256 leverage,
         uint24 uniswapFee
     ) private {
+        if (instrument.basePool.maxFYTokenIn.cap() < cauldron.minLiquidityToCloseLendingPosition(positionId, quantity))
+        {
+            revert InsufficientLiquidity();
+        }
+
         uint256 amountRealBaseReceivedFromSellingLendingPosition =
-            instrument.basePool.sellFYTokenPreview(quantity.toUint128());
+            cauldron.closeLendingPositionPreview(instrument.basePool, positionId, quantity);
 
         result.spotCost =
             int256(quoter.spot(address(instrument.base), address(instrument.quote), int256(quantity), uniswapFee));
@@ -267,8 +285,7 @@ contract ContangoYieldQuoter is IContangoQuoter {
         if (balances.ink == quantity) {
             uint256 costRecovered;
             if (balances.art != 0) {
-                costRecovered = balances.art
-                    - instrument.quotePool.buyFYTokenPreview.orMint(balances.art, result.quoteLendingLiquidity);
+                costRecovered = balances.art - instrument.quotePool.buyFYTokenPreview.orMint(balances.art);
             }
             result.cost = hedgeCost + int256(costRecovered);
         } else {
@@ -293,7 +310,7 @@ contract ContangoYieldQuoter is IContangoQuoter {
             uint128 diff = maxDebtAfterModify - balances.art;
             uint128 maxBorrowableAmount = uint128(Math.min(instrument.quotePool.maxFYTokenIn.cap(), maxAvailableDebt));
             uint256 refinancingRoomPV =
-                instrument.quotePool.sellFYTokenPreview(diff > maxBorrowableAmount ? maxBorrowableAmount : diff);
+                instrument.quotePool.sellFYTokenPreviewZero(diff > maxBorrowableAmount ? maxBorrowableAmount : diff);
             result.minCollateral -= spotCost + int256(refinancingRoomPV);
         }
 
@@ -400,30 +417,6 @@ contract ContangoYieldQuoter is IContangoQuoter {
         }
     }
 
-    function _evaluateLiquidity(
-        YieldInstrument memory instrument,
-        DataTypes.Balances memory balances,
-        ModifyCostResult memory result,
-        int256 quantity,
-        int256 collateral
-    ) private view {
-        // If we're opening a new position
-        if (balances.art == 0 && quantity > 0) {
-            result.insufficientLiquidity =
-                Math.min(instrument.quotePool.maxFYTokenIn.cap(), maxAvailableDebt) < result.minDebt;
-        }
-
-        // If we're withdrawing from a position
-        if (quantity == 0 && collateral < 0) {
-            result.insufficientLiquidity = instrument.quotePool.maxBaseOut.cap() < collateral.abs();
-        }
-
-        // If we're reducing a position
-        if (quantity < 0) {
-            result.insufficientLiquidity = instrument.basePool.maxFYTokenIn.cap() < quantity.abs();
-        }
-    }
-
     function _assignCollateralUsed(
         YieldInstrument memory instrument,
         DataTypes.Balances memory balances,
@@ -459,8 +452,11 @@ contract ContangoYieldQuoter is IContangoQuoter {
         int256 debtPV;
 
         if (debtFV > balances.art) {
+            // Debt can't grow bigger than the available liquidity
+            uint256 newDebt = Math.min(debtFV - balances.art, instrument.quotePool.maxFYTokenIn.cap());
+
             // Debt needs to increase to reach the desired leverage
-            debtPV = -int128(instrument.quotePool.sellFYTokenPreview(debtFV.toUint128() - balances.art));
+            debtPV = -int128(instrument.quotePool.sellFYTokenPreviewZero(newDebt.toUint128()));
         } else {
             // Debt needs to be burnt to reach the desired leverage
             debtPV = int128(instrument.quotePool.buyFYTokenPreview.orMint(balances.art - debtFV.toUint128()));
@@ -470,11 +466,15 @@ contract ContangoYieldQuoter is IContangoQuoter {
     }
 
     function _deliveryCostForPosition(
+        PositionId positionId,
         DataTypes.Balances memory balances,
         YieldInstrument memory instrument,
         Position memory position
-    ) internal returns (uint256) {
-        return cauldron.debtToBase(instrument.quoteId, balances.art) + position.protocolFees;
+    ) internal returns (uint256 deliveryCost) {
+        deliveryCost = cauldron.debtToBase(instrument.quoteId, balances.art);
+        uint256 deliveryFee = QuoterLib.fee(contangoYield, positionNFT, positionId, position.symbol, deliveryCost);
+
+        deliveryCost += position.protocolFees + deliveryFee;
     }
 
     function _validatePosition(PositionId positionId)

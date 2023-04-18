@@ -3,8 +3,8 @@ pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "solmate/src/tokens/WETH.sol";
-import {IContangoLadle} from "@yield-protocol/vault-v2/contracts/other/contango/interfaces/IContangoLadle.sol";
-import "@yield-protocol/vault-v2/contracts/other/contango/interfaces/IContangoWitchListener.sol";
+import {IContangoLadle} from "@yield-protocol/vault-v2/src/other/contango/interfaces/IContangoLadle.sol";
+import "@yield-protocol/vault-v2/src/other/contango/interfaces/IContangoWitchListener.sol";
 
 import "./interfaces/IContangoYield.sol";
 import "./interfaces/IContangoYieldAdmin.sol";
@@ -132,7 +132,6 @@ contract ContangoYield is ContangoBase, IContangoWitchListener, IContangoYield, 
         (DataTypes.Series memory baseSeries, DataTypes.Series memory quoteSeries) =
             _validInstrumentData(cauldron, _symbol, _baseId, _quoteId);
 
-        StorageLib.getInstrumentFeeModel()[_symbol] = _feeModel;
         IContangoLadle ladle = YieldStorageLib.getLadle();
 
         (InstrumentStorage memory instrumentStorage, YieldInstrumentStorage memory yieldInstrumentStorage) =
@@ -147,6 +146,7 @@ contract ContangoYield is ContangoBase, IContangoWitchListener, IContangoYield, 
 
         instrument = _yieldInstrument(instrumentStorage, yieldInstrumentStorage);
         emitInstrumentCreatedEvent(_symbol, instrument);
+        _setFeeModel(_symbol, _feeModel);
     }
 
     function _yieldInstrument(

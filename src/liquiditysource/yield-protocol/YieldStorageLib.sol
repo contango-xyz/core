@@ -1,9 +1,9 @@
 //SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.17;
 
-import {DataTypes} from "@yield-protocol/vault-v2/contracts/interfaces/DataTypes.sol";
-import {IContangoLadle} from "@yield-protocol/vault-v2/contracts/other/contango/interfaces/IContangoLadle.sol";
-import {ICauldron} from "@yield-protocol/vault-v2/contracts/interfaces/ICauldron.sol";
+import {DataTypes} from "@yield-protocol/vault-v2/src/interfaces/DataTypes.sol";
+import {IContangoLadle} from "@yield-protocol/vault-v2/src/other/contango/interfaces/IContangoLadle.sol";
+import {ICauldron} from "@yield-protocol/vault-v2/src/interfaces/ICauldron.sol";
 
 import "../../libraries/StorageLib.sol";
 

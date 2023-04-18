@@ -1,12 +1,16 @@
 //SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.17;
 
+import "@openzeppelin/contracts/utils/math/Math.sol";
+import {ICauldron} from "@yield-protocol/vault-v2/src/interfaces/ICauldron.sol";
 import {IPool} from "@yield-protocol/yieldspace-tv/src/interfaces/IPool.sol";
 import "solmate/src/utils/FixedPointMathLib.sol";
 import "../../libraries/Errors.sol";
 import "../../libraries/DataTypes.sol";
+import "./YieldUtils.sol";
 
 library YieldQuoterUtils {
+    using YieldUtils for *;
     using FixedPointMathLib for *;
 
     uint256 private constant SCALE_FACTOR_FOR_18_DECIMALS = 1;
@@ -85,5 +89,13 @@ library YieldQuoterUtils {
     {
         if (liquidity == 0) return param;
         return liquidity > param ? previewFN(param) : previewFN(uint128(liquidity)) + (param - uint128(liquidity));
+    }
+
+    function minLiquidityToCloseLendingPosition(ICauldron cauldron, PositionId positionId, uint256 quantity)
+        internal
+        view
+        returns (uint256)
+    {
+        return quantity - Math.min(quantity, cauldron.balances(positionId.toBaseVaultId()).ink);
     }
 }
