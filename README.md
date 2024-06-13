@@ -5,7 +5,7 @@ Contango is bringing expirables to DeFi. Buy or sell assets at a set price and d
 
 ## Smart Contracts
 
-The smart contracts use an UUSP proxy as entry point, and rely on external libraries to split code/responsibilities whilst keeping the execution context under a single address.
+The smart contracts use an UUPS proxy as entry point, and rely on external libraries to split code/responsibilities whilst keeping the execution context under a single address.
 At the moment there's a single implementation of underlying Spot (Uniswap V3), and a single implementation of fixed rate market (Yield Protocol)
 
 ## Warning
